@@ -29,6 +29,17 @@ This fork reworks many modules and adds diagnostics, all measured against real g
 `docs/ENGINEERING-NOTES.md` is the full development log: what was measured, what changed and why. Read it before
 changing a module.
 
+## Atlas ClickGUI
+
+| Modules and settings | Mode dropdown |
+|---|---|
+| ![Atlas: Combat modules and Clutch settings](images/atlas/atlas-combat-clutch.png) | ![Atlas: FakeLag mode dropdown](images/atlas/atlas-fakelag-mode.png) |
+
+![Atlas: Legit tab](images/atlas/atlas-legit.png)
+
+Search, categories, a Legit tab, per-module descriptions and grouped settings with hints.
+Client Settings holds the theme and the language (中文 / English).
+
 ## Building
 
 Requires JDK 17 to run Gradle (the mod itself targets Java 8).
@@ -65,6 +76,8 @@ Minecraft 1.8.9 Forge 客戶端，fork 自 [IamNespola/OpenMyau-Plus](https://gi
 - **Atlas 點擊選單**：每個模組和設定都有中英文說明（Client Settings → Language）。
 
 開發紀錄在 `docs/ENGINEERING-NOTES.md`。
+
+Atlas 點擊選單的截圖在上面的「Atlas ClickGUI」段落。
 
 編譯：需要 JDK 17，執行 `./gradlew build`，jar 會在 `build/libs/`。
 
