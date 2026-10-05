@@ -1,0 +1,40 @@
+name: Build jar
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Gradle runs on 17; the mod itself is compiled with the Java 8 toolchain.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            17
+
+      # Applies atlas-ui.patch when it is in the repository and not applied yet.
+      - name: Apply UI update patch
+        run: |
+          if [ -f atlas-ui.patch ] && git apply --check atlas-ui.patch 2>/dev/null; then
+            git apply atlas-ui.patch
+            echo "atlas-ui.patch applied"
+          else
+            echo "no patch to apply"
+          fi
+
+      - name: Build
+        run: |
+          chmod +x gradlew
+          ./gradlew build --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Myau-Atlas-jar
+          path: build/libs/*.jar
