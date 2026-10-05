@@ -1,0 +1,2135 @@
+--- /dev/null
++++ b/src/main/java/myau/ui/UiMode.java
+@@ -0,0 +1,101 @@
++package myau.ui;
++
++import com.google.gson.JsonElement;
++import com.google.gson.JsonObject;
++import com.google.gson.JsonParser;
++
++import java.awt.Color;
++import java.io.File;
++import java.io.FileReader;
++import java.io.Reader;
++
++/**
++ * Dark or light, shared by the Atlas menu and every HUD element.
++ *
++ * The menu owns the setting ({@code appearance-mode} in atlas-theme.json) and
++ * pushes it here every frame it is open. HUD elements only read it, and the
++ * first read loads it from that file, so they follow the choice even in a game
++ * where the menu has not been opened yet.
++ */
++public final class UiMode {
++    private static final File THEME_FILE = new File("./config/Myau/atlas-theme.json");
++    private static final String KEY = "appearance-mode";
++    /** How far apart the brightest and dimmest channel may be for a colour to count as neutral. */
++    private static final int NEUTRAL_SPREAD = 40;
++
++    private static boolean light;
++    private static boolean loaded;
++
++    private UiMode() {
++    }
++
++    public static boolean isLight() {
++        if (!loaded) {
++            load();
++        }
++        return light;
++    }
++
++    public static void setLight(boolean value) {
++        light = value;
++        loaded = true;
++    }
++
++    /**
++     * In light mode, swaps the lightness of a neutral colour (black, white or a
++     * grey) and keeps its alpha: a translucent black panel becomes a translucent
++     * white one, white text becomes near-black. Colours with a hue -- accents,
++     * health, potion colours, the theme gradient -- are returned unchanged.
++     * In dark mode every colour is returned unchanged.
++     */
++    public static int adapt(int argb) {
++        if (!isLight()) {
++            return argb;
++        }
++        int r = (argb >> 16) & 0xFF;
++        int g = (argb >> 8) & 0xFF;
++        int b = argb & 0xFF;
++        int max = Math.max(r, Math.max(g, b));
++        int min = Math.min(r, Math.min(g, b));
++        if (max - min > NEUTRAL_SPREAD) {
++            return argb;
++        }
++        return (argb & 0xFF000000) | ((255 - r) << 16) | ((255 - g) << 8) | (255 - b);
++    }
++
++    public static Color adapt(Color colour) {
++        if (colour == null || !isLight()) {
++            return colour;
++        }
++        int argb = adapt(colour.getRGB());
++        return new Color((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF, colour.getAlpha());
++    }
++
++    private static void load() {
++        loaded = true;
++        if (!THEME_FILE.exists()) {
++            return;
++        }
++        Reader reader = null;
++        try {
++            reader = new FileReader(THEME_FILE);
++            JsonElement parsed = new JsonParser().parse(reader);
++            if (parsed != null && parsed.isJsonObject()) {
++                JsonObject object = parsed.getAsJsonObject();
++                if (object.has(KEY)) {
++                    light = "Light".equalsIgnoreCase(object.get(KEY).getAsString());
++                }
++            }
++        } catch (Exception ignored) {
++            // Dark, the default.
++        } finally {
++            if (reader != null) {
++                try {
++                    reader.close();
++                } catch (Exception ignored) {
++                    // Nothing further to do.
++                }
++            }
++        }
++    }
++}
+--- /dev/null
++++ b/src/main/java/myau/ui/hud/HudLayout.java
+@@ -0,0 +1,134 @@
++package myau.ui.hud;
++
++import myau.property.properties.DragProperty;
++import myau.property.properties.IntProperty;
++
++import java.util.ArrayList;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++
++/**
++ * Where each HUD element was drawn on the last frame, and how to move it.
++ *
++ * A HUD module calls {@link #report} after drawing, with the rectangle it
++ * covered (in scaled screen pixels) and a {@link Mover} built over the settings
++ * that store its position. The HUD editor reads these back to draw the frames
++ * and to drag the elements. Moving is done by whole-pixel deltas, so an element
++ * follows the pointer exactly whatever its own position formula is (an anchor
++ * and an offset, a right-hand margin, a free position), as long as the setting
++ * moves the element one pixel per unit -- which is true of every element that
++ * reports here.
++ */
++public final class HudLayout {
++    /** Moves an element; returns how far it really moved, since a setting may be at its limit. */
++    public interface Mover {
++        int[] moveBy(int dx, int dy);
++    }
++
++    public static final class Element {
++        public final String id;
++        public String label;
++        public float x;
++        public float y;
++        public float width;
++        public float height;
++        public Mover mover;
++        long seenAt;
++
++        Element(String id) {
++            this.id = id;
++        }
++
++        public boolean contains(float px, float py) {
++            return px >= this.x && px <= this.x + this.width && py >= this.y && py <= this.y + this.height;
++        }
++    }
++
++    /** An element counts as on screen if it reported this recently. */
++    private static final long VISIBLE_MS = 250L;
++    private static final Map<String, Element> ELEMENTS = new LinkedHashMap<String, Element>();
++    private static boolean editing;
++
++    private HudLayout() {
++    }
++
++    /** True while the HUD editor is open: elements that hide behind menus should keep drawing. */
++    public static boolean isEditing() {
++        return editing;
++    }
++
++    static void setEditing(boolean value) {
++        editing = value;
++    }
++
++    public static void report(String id, String label, float x, float y, float width, float height, Mover mover) {
++        if (width <= 0.0F || height <= 0.0F || mover == null) {
++            return;
++        }
++        Element element = ELEMENTS.get(id);
++        if (element == null) {
++            element = new Element(id);
++            ELEMENTS.put(id, element);
++        }
++        element.label = label;
++        element.x = x;
++        element.y = y;
++        element.width = width;
++        element.height = height;
++        element.mover = mover;
++        element.seenAt = System.currentTimeMillis();
++    }
++
++    static List<Element> visible() {
++        long now = System.currentTimeMillis();
++        List<Element> out = new ArrayList<Element>();
++        for (Element element : ELEMENTS.values()) {
++            if (now - element.seenAt <= VISIBLE_MS) {
++                out.add(element);
++            }
++        }
++        return out;
++    }
++
++    /**
++     * A mover over two integer settings. A sign of 1 means a larger value moves
++     * the element right (or down); -1 means it moves it left (or up), as with a
++     * right-hand margin. Either setting may be null to lock that axis.
++     */
++    public static Mover ints(final IntProperty xSetting, final int xSign, final IntProperty ySetting, final int ySign) {
++        return new Mover() {
++            @Override
++            public int[] moveBy(int dx, int dy) {
++                return new int[]{shift(xSetting, xSign, dx), shift(ySetting, ySign, dy)};
++            }
++        };
++    }
++
++    /** A mover over a {@link DragProperty}, which stores a free position. */
++    public static Mover drag(final DragProperty setting) {
++        return new Mover() {
++            @Override
++            public int[] moveBy(int dx, int dy) {
++                setting.position.x += dx;
++                setting.position.y += dy;
++                setting.targetPosition.x = setting.position.x;
++                setting.targetPosition.y = setting.position.y;
++                return new int[]{dx, dy};
++            }
++        };
++    }
++
++    private static int shift(IntProperty setting, int sign, int delta) {
++        if (setting == null || sign == 0 || delta == 0) {
++            return 0;
++        }
++        int old = setting.getValue();
++        int wanted = old + sign * delta;
++        int clamped = Math.max(setting.getMinimum(), Math.min(setting.getMaximum(), wanted));
++        if (clamped == old || !setting.setValue(clamped)) {
++            return 0;
++        }
++        return (clamped - old) * sign;
++    }
++}
+--- /dev/null
++++ b/src/main/java/myau/ui/hud/HudEditorScreen.java
+@@ -0,0 +1,272 @@
++package myau.ui.hud;
++
++import myau.Myau;
++import myau.module.modules.ClickGUIModule;
++import myau.ui.UiMode;
++import net.minecraft.client.gui.Gui;
++import net.minecraft.client.gui.GuiScreen;
++import net.minecraft.client.gui.ScaledResolution;
++import org.lwjgl.input.Keyboard;
++
++import java.util.List;
++
++/**
++ * Lets the player drag HUD elements around the screen.
++ *
++ * Opened from the menu's HUD Editor button. The HUD keeps drawing underneath,
++ * as it does behind any menu; this screen only draws a frame around each
++ * element that reported where it is (see {@link HudLayout}), and moves the one
++ * being dragged. Escape goes back to the menu that opened it.
++ */
++public class HudEditorScreen extends GuiScreen {
++    /** How close, in pixels, an edge or centre has to come to a guide to snap to it. */
++    private static final int SNAP = 4;
++
++    private final GuiScreen parent;
++    private HudLayout.Element dragging;
++    private HudLayout.Element selected;
++    private float startX;
++    private float startY;
++    private int pressX;
++    private int pressY;
++    private int movedX;
++    private int movedY;
++    /* The guide lines the dragged element is snapped to, if any. */
++    private boolean guideXShown;
++    private boolean guideYShown;
++    private float guideX;
++    private float guideY;
++
++    public HudEditorScreen(GuiScreen parent) {
++        this.parent = parent;
++    }
++
++    @Override
++    public void initGui() {
++        HudLayout.setEditing(true);
++    }
++
++    @Override
++    public void onGuiClosed() {
++        HudLayout.setEditing(false);
++        this.dragging = null;
++    }
++
++    @Override
++    public boolean doesGuiPauseGame() {
++        return false;
++    }
++
++    @Override
++    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
++        ScaledResolution sr = new ScaledResolution(this.mc);
++        int sw = sr.getScaledWidth();
++        int sh = sr.getScaledHeight();
++        boolean light = UiMode.isLight();
++        int accent = accent();
++        int neutral = light ? 0xFF1A1F28 : 0xFFFFFFFF;
++
++        /* Faint centre lines, the two guides everything can snap to. */
++        Gui.drawRect(sw / 2, 0, sw / 2 + 1, sh, withAlpha(neutral, 0x18));
++        Gui.drawRect(0, sh / 2, sw, sh / 2 + 1, withAlpha(neutral, 0x18));
++
++        List<HudLayout.Element> elements = HudLayout.visible();
++        HudLayout.Element hovered = this.dragging != null ? null : topAt(elements, mouseX, mouseY);
++        for (HudLayout.Element element : elements) {
++            boolean active = element == this.dragging || element == this.selected;
++            boolean hover = element == hovered;
++            int left = Math.round(element.x);
++            int top = Math.round(element.y);
++            int right = Math.round(element.x + element.width);
++            int bottom = Math.round(element.y + element.height);
++            if (active || hover) {
++                Gui.drawRect(left, top, right, bottom, withAlpha(accent, active ? 0x2E : 0x1A));
++            }
++            int edge = active || hover ? withAlpha(accent, 0xE6) : withAlpha(neutral, 0x80);
++            frame(left, top, right, bottom, edge);
++            drawLabel(element.label, left, top, bottom, sh, active || hover ? accent : neutral, light);
++        }
++
++        if (this.dragging != null) {
++            if (this.guideXShown) {
++                int gx = Math.round(this.guideX);
++                Gui.drawRect(gx, 0, gx + 1, sh, withAlpha(accent, 0xC0));
++            }
++            if (this.guideYShown) {
++                int gy = Math.round(this.guideY);
++                Gui.drawRect(0, gy, sw, gy + 1, withAlpha(accent, 0xC0));
++            }
++        }
++
++        String help = elements.isEmpty()
++                ? "Turn on a HUD module to place it here  |  Esc to go back"
++                : "Drag to move  |  Arrow keys nudge, Shift x10  |  Esc to go back";
++        int helpWidth = this.fontRendererObj.getStringWidth(help);
++        int helpX = (sw - helpWidth) / 2;
++        int helpY = sh - 34;
++        Gui.drawRect(helpX - 8, helpY - 5, helpX + helpWidth + 8, helpY + 13, light ? 0xD0F3F5F9 : 0xB0101318);
++        this.fontRendererObj.drawStringWithShadow(help, helpX, helpY, light ? 0xFF1A1F28 : 0xFFE6EBF2);
++        super.drawScreen(mouseX, mouseY, partialTicks);
++    }
++
++    @Override
++    protected void mouseClicked(int mouseX, int mouseY, int mouseButton) {
++        if (mouseButton != 0) {
++            return;
++        }
++        HudLayout.Element element = topAt(HudLayout.visible(), mouseX, mouseY);
++        this.selected = element;
++        this.dragging = element;
++        this.guideXShown = false;
++        this.guideYShown = false;
++        if (element != null) {
++            this.startX = element.x;
++            this.startY = element.y;
++            this.pressX = mouseX;
++            this.pressY = mouseY;
++            this.movedX = 0;
++            this.movedY = 0;
++        }
++    }
++
++    @Override
++    protected void mouseClickMove(int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
++        if (this.dragging == null || clickedMouseButton != 0) {
++            return;
++        }
++        ScaledResolution sr = new ScaledResolution(this.mc);
++        int sw = sr.getScaledWidth();
++        int sh = sr.getScaledHeight();
++        float w = this.dragging.width;
++        float h = this.dragging.height;
++        float wantX = this.startX + (mouseX - this.pressX);
++        float wantY = this.startY + (mouseY - this.pressY);
++
++        List<HudLayout.Element> others = HudLayout.visible();
++        others.remove(this.dragging);
++        float[] snappedX = snapAxis(wantX, w, sw, others, true);
++        float[] snappedY = snapAxis(wantY, h, sh, others, false);
++        float x = snappedX[0];
++        float y = snappedY[0];
++        this.guideXShown = snappedX[1] > 0.5F;
++        this.guideX = snappedX[2];
++        this.guideYShown = snappedY[1] > 0.5F;
++        this.guideY = snappedY[2];
++
++        /* Never past the edge of the screen. */
++        x = Math.max(0.0F, Math.min(Math.max(0.0F, sw - w), x));
++        y = Math.max(0.0F, Math.min(Math.max(0.0F, sh - h), y));
++        moveTo(Math.round(x - this.startX), Math.round(y - this.startY));
++    }
++
++    @Override
++    protected void mouseReleased(int mouseX, int mouseY, int state) {
++        this.dragging = null;
++        this.guideXShown = false;
++        this.guideYShown = false;
++    }
++
++    @Override
++    protected void keyTyped(char typedChar, int keyCode) {
++        if (keyCode == Keyboard.KEY_ESCAPE) {
++            this.mc.displayGuiScreen(this.parent);
++            return;
++        }
++        if (this.selected == null || this.selected.mover == null || this.dragging != null) {
++            return;
++        }
++        int step = Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) || Keyboard.isKeyDown(Keyboard.KEY_RSHIFT) ? 10 : 1;
++        if (keyCode == Keyboard.KEY_LEFT) {
++            this.selected.mover.moveBy(-step, 0);
++        } else if (keyCode == Keyboard.KEY_RIGHT) {
++            this.selected.mover.moveBy(step, 0);
++        } else if (keyCode == Keyboard.KEY_UP) {
++            this.selected.mover.moveBy(0, -step);
++        } else if (keyCode == Keyboard.KEY_DOWN) {
++            this.selected.mover.moveBy(0, step);
++        }
++    }
++
++    /** Moves the dragged element so it ends up this far from where the drag began. */
++    private void moveTo(int totalX, int totalY) {
++        int[] moved = this.dragging.mover.moveBy(totalX - this.movedX, totalY - this.movedY);
++        this.movedX += moved[0];
++        this.movedY += moved[1];
++    }
++
++    /**
++     * Snaps one axis. Returns {position, 1 if snapped else 0, guide line}.
++     * Guides: the screen's edges and centre, and every other element's edges and centre.
++     */
++    private static float[] snapAxis(float want, float size, int screen, List<HudLayout.Element> others,
++                                    boolean horizontal) {
++        float best = want;
++        float bestDistance = SNAP + 1;
++        float line = 0.0F;
++        float[][] candidates = new float[3 + others.size() * 5][];
++        int n = 0;
++        candidates[n++] = new float[]{0.0F, 0.0F};
++        candidates[n++] = new float[]{screen - size, screen};
++        candidates[n++] = new float[]{screen / 2.0F - size / 2.0F, screen / 2.0F};
++        for (HudLayout.Element other : others) {
++            float start = horizontal ? other.x : other.y;
++            float length = horizontal ? other.width : other.height;
++            float end = start + length;
++            candidates[n++] = new float[]{start, start};
++            candidates[n++] = new float[]{end, end};
++            candidates[n++] = new float[]{end - size, end};
++            candidates[n++] = new float[]{start - size, start};
++            candidates[n++] = new float[]{start + length / 2.0F - size / 2.0F, start + length / 2.0F};
++        }
++        for (int i = 0; i < n; i++) {
++            float distance = Math.abs(candidates[i][0] - want);
++            if (distance <= SNAP && distance < bestDistance) {
++                bestDistance = distance;
++                best = candidates[i][0];
++                line = candidates[i][1];
++            }
++        }
++        return new float[]{best, bestDistance <= SNAP ? 1.0F : 0.0F, line};
++    }
++
++    private static HudLayout.Element topAt(List<HudLayout.Element> elements, int mouseX, int mouseY) {
++        /* Last reported is drawn last, so it is on top. */
++        for (int i = elements.size() - 1; i >= 0; i--) {
++            if (elements.get(i).contains(mouseX, mouseY)) {
++                return elements.get(i);
++            }
++        }
++        return null;
++    }
++
++    private static void frame(int left, int top, int right, int bottom, int colour) {
++        Gui.drawRect(left, top, right, top + 1, colour);
++        Gui.drawRect(left, bottom - 1, right, bottom, colour);
++        Gui.drawRect(left, top + 1, left + 1, bottom - 1, colour);
++        Gui.drawRect(right - 1, top + 1, right, bottom - 1, colour);
++    }
++
++    private void drawLabel(String label, int left, int top, int bottom, int screenHeight, int colour, boolean light) {
++        if (label == null || label.isEmpty()) {
++            return;
++        }
++        int width = this.fontRendererObj.getStringWidth(label);
++        /* Above the frame, or below it when there is no room above. */
++        int y = top - 11 >= 0 ? top - 11 : Math.min(screenHeight - 10, bottom + 2);
++        Gui.drawRect(left, y - 1, left + width + 6, y + 9, light ? 0xC8F3F5F9 : 0xB0101318);
++        this.fontRendererObj.drawStringWithShadow(label, left + 3, y, colour);
++    }
++
++    private static int withAlpha(int colour, int alpha) {
++        return (alpha << 24) | (colour & 0x00FFFFFF);
++    }
++
++    private static int accent() {
++        try {
++            ClickGUIModule gui = (ClickGUIModule) Myau.moduleManager.modules.get(ClickGUIModule.class);
++            return gui == null ? 0xFF4FC3F7 : gui.getAccentColor().getRGB();
++        } catch (Exception ignored) {
++            return 0xFF4FC3F7;
++        }
++    }
++}
+--- /dev/null
++++ b/src/main/java/myau/ui/impl/clickgui/atlas/LegitGroups.java
+@@ -0,0 +1,86 @@
++package myau.ui.impl.clickgui.atlas;
++
++import myau.module.Module;
++
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++
++/**
++ * The sub-groups of the Legit page, and which module goes in which.
++ *
++ * This table is the only place the grouping lives. Modules are matched by
++ * class name, so a module's display name can change without moving it. A Legit
++ * module missing from the table is never hidden: it lands in "More".
++ */
++final class LegitGroups {
++    static final String HUD = "HUD";
++    static final String VISUALS = "Visuals";
++    static final String STATS = "Stats";
++    static final String UTILITY = "Utility";
++    /* Not "Other": the Modules page already has an "Other" category. */
++    static final String MORE = "More";
++
++    private static final String[] ORDER = {HUD, VISUALS, STATS, UTILITY, MORE};
++    private static final Map<String, String> GROUP_OF = new HashMap<String, String>();
++
++    static {
++        put(HUD, "HUD", "LegitHUD", "ArmorHUD", "EffectsHUD", "FPScounter", "Hotbar", "DynamicIsland",
++                "WaterMark", "WaterMark2", "KeyStrokes", "PotionHUD", "InventoryHUD", "PlayerList",
++                "ClosestPlayerHUD");
++        put(VISUALS, "Ambience", "Animations", "Capes", "FullBright", "HitParticleEffects", "ItemPhysics",
++                "NoHurtCam");
++        put(STATS, "Statistics", "PlayTracker", "FKCounter");
++        put(UTILITY, "AutoRespawn", "FreeLook", "Sprint");
++    }
++
++    private LegitGroups() {
++    }
++
++    private static void put(String group, String... classNames) {
++        for (String name : classNames) {
++            GROUP_OF.put(name, group);
++        }
++    }
++
++    /** The Legit modules split into their groups, in display order, leaving out empty groups. */
++    static Map<String, List<Module>> group(List<Module> legit) {
++        Map<String, List<Module>> buckets = new LinkedHashMap<String, List<Module>>();
++        for (String name : ORDER) {
++            buckets.put(name, new ArrayList<Module>());
++        }
++        for (Module module : legit) {
++            if (module == null) {
++                continue;
++            }
++            String group = GROUP_OF.get(module.getClass().getSimpleName());
++            buckets.get(group == null ? MORE : group).add(module);
++        }
++        Map<String, List<Module>> out = new LinkedHashMap<String, List<Module>>();
++        for (Map.Entry<String, List<Module>> entry : buckets.entrySet()) {
++            if (!entry.getValue().isEmpty()) {
++                out.put(entry.getKey(), entry.getValue());
++            }
++        }
++        return out;
++    }
++
++    /** The sidebar icon for a group, from the icons the menu already draws. */
++    static String icon(String group) {
++        if (HUD.equals(group)) {
++            return "selection";
++        }
++        if (VISUALS.equals(group)) {
++            return "render";
++        }
++        if (STATS.equals(group)) {
++            return "motion";
++        }
++        if (UTILITY.equals(group)) {
++            return "player";
++        }
++        return "folder";
++    }
++}
+--- a/src/main/java/myau/ui/impl/clickgui/atlas/AtlasClickGui.java
++++ b/src/main/java/myau/ui/impl/clickgui/atlas/AtlasClickGui.java
+@@ -80,7 +80,7 @@
+     private static AtlasClickGui instance;
+ 
+     // Layout, in scaled pixels.
+-    private static final int HEADER = 68;
++    private static final int HEADER = 42;
+     /* Set from the theme at the start of every frame: the density, the
+        corner radius and whether the hint bar has a strip of its own. */
+     private int FOOTER = 20;
+@@ -102,10 +102,15 @@
+     /* Text is opaque and bright; every surface behind it is glass. Text over a
+        translucent panel has to be brighter than text over a solid one -- the
+        background shows through and eats contrast. */
+-    private static final int TEXT = 0xFFF5F8FF;
+-    private static final int DIM = 0xD1C3CEDF;
+-    private static final int FAINT = 0x9E93A3BA;
++    /* Dark-mode values. Repainted at the start of every frame by paintPalette(),
++       so light mode swaps them for dark text without touching any call site. */
++    private static int TEXT = 0xFFF5F8FF;
++    private static int DIM = 0xD1C3CEDF;
++    private static int FAINT = 0x9E93A3BA;
+     private static final int WHITE = 0xFFFFFFFF;
++    /* The neutral every hover wash, divider and rim is mixed from: white over
++       dark glass, ink over light glass. See ink(). */
++    private static int INK = 0xFFFFFFFF;
+ 
+     /** How the menu looks; edited on the Appearance page, kept in atlas-theme.json. */
+     private final AtlasTheme theme = new AtlasTheme();
+@@ -119,6 +124,8 @@
+ 
+     private final List<String> categories = new ArrayList<String>();
+     private final Map<String, List<Module>> byCategory = new LinkedHashMap<String, List<Module>>();
++    /** The Legit page's sub-groups (see LegitGroups), rebuilt with the catalogue. */
++    private final Map<String, List<Module>> legitGroups = new LinkedHashMap<String, List<Module>>();
+ 
+     private String category = "";
+     private String page = "Modules";
+@@ -428,8 +435,15 @@
+             this.categories.add(entry.getKey());
+             this.byCategory.put(entry.getKey(), entry.getValue());
+         }
+-        if ("Legit".equals(this.page) && this.categories.contains("Legit")) {
+-            this.category = "Legit";
++        this.legitGroups.clear();
++        List<Module> legit = this.byCategory.get("Legit");
++        if (legit != null) {
++            this.legitGroups.putAll(LegitGroups.group(legit));
++        }
++        if ("Legit".equals(this.page) && !this.legitGroups.isEmpty()) {
++            if (!this.legitGroups.containsKey(this.category)) {
++                this.category = this.legitGroups.keySet().iterator().next();
++            }
+         } else if (!this.categories.contains(this.category) || "Legit".equals(this.category)) {
+             this.category = firstModuleCategory();
+         }
+@@ -465,9 +479,7 @@
+     private List<String> sidebarCategories() {
+         List<String> out = new ArrayList<String>();
+         if ("Legit".equals(this.page)) {
+-            if (this.byCategory.containsKey("Legit")) {
+-                out.add("Legit");
+-            }
++            out.addAll(this.legitGroups.keySet());
+         } else if ("Modules".equals(this.page)) {
+             for (String name : this.categories) {
+                 if (!"Legit".equals(name)) {
+@@ -621,20 +633,27 @@
+         }
+         String needle = this.search.toLowerCase().trim();
+         if (!needle.isEmpty()) {
+-            /* Search spans every category inside the active top-level tab. */
++            /* Search spans every page: this page's matches first, then the other
++               page's, which the list draws as borrowed (see drawList). */
++            List<Module> elsewhere = new ArrayList<Module>();
+             for (List<Module> list : this.byCategory.values()) {
+                 for (Module module : list) {
+-                    if (module != null && belongsOnPage(module)
+-                            && module.getName().toLowerCase().contains(needle)
+-                            && !out.contains(module)) {
++                    if (module == null || !module.getName().toLowerCase().contains(needle)
++                            || out.contains(module) || elsewhere.contains(module)) {
++                        continue;
++                    }
++                    if (belongsOnPage(module)) {
+                         out.add(module);
++                    } else {
++                        elsewhere.add(module);
+                     }
+                 }
+             }
++            out.addAll(elsewhere);
+             return out;
+         }
+-        String selectedCategory = "Legit".equals(this.page) ? "Legit" : this.category;
+-        List<Module> list = this.byCategory.get(selectedCategory);
++        List<Module> list = "Legit".equals(this.page) ? this.legitGroups.get(this.category)
++                : this.byCategory.get(this.category);
+         if (list != null) {
+             for (Module module : list) {
+                 if (module != null) {
+@@ -664,7 +683,7 @@
+         this.detailScroll = 0;
+         this.dropdown = null;
+         if ("Legit".equals(next)) {
+-            this.category = "Legit";
++            this.category = this.legitGroups.isEmpty() ? "Legit" : this.legitGroups.keySet().iterator().next();
+             this.profilesView = false;
+             this.appearanceView = false;
+             List<Module> modules = visibleModules();
+@@ -672,7 +691,7 @@
+         } else if ("Modules".equals(next)) {
+             this.profilesView = false;
+             this.appearanceView = false;
+-            if ("Legit".equals(this.category)) {
++            if ("Legit".equals(this.category) || this.legitGroups.containsKey(this.category)) {
+                 this.category = firstModuleCategory();
+             }
+             List<Module> modules = visibleModules();
+@@ -796,6 +815,7 @@
+ 
+         long frameStart = System.nanoTime();
+         applyTheme();
++        paintPalette();
+         followDrag(sr, mouseX, mouseY);
+         /* Before anything of the menu is drawn: the copy it blurs has to be
+            of the world alone. */
+@@ -866,10 +886,10 @@
+             int bodyTop = y + HEADER;
+             int bodyHeight = height - HEADER - FOOTER;
+             drawHeader(x, y, width, sidebar, detail, mx, my);
+-            Liquid.rect(x + 14, y + HEADER - 0.5F, x + width - 14, y + HEADER, 0.0F, 0x12FFFFFF);
+-            Liquid.rect(x + sidebar, bodyTop + 10, x + sidebar + 0.5F, bodyTop + bodyHeight - 10, 0.0F, 0x0FFFFFFF);
++            Liquid.rect(x + 14, y + HEADER - 0.5F, x + width - 14, y + HEADER, 0.0F, ink(0x12));
++            Liquid.rect(x + sidebar, bodyTop + 10, x + sidebar + 0.5F, bodyTop + bodyHeight - 10, 0.0F, ink(0x0F));
+             Liquid.rect(x + width - detail, bodyTop + 10, x + width - detail + 0.5F,
+-                    bodyTop + bodyHeight - 10, 0.0F, 0x0FFFFFFF);
++                    bodyTop + bodyHeight - 10, 0.0F, ink(0x0F));
+ 
+             drawSidebar(x, bodyTop, bodyHeight, sidebar, mx, my);
+             if (this.profilesView) {
+@@ -945,23 +965,36 @@
+     }
+ 
+     private void drawHeader(int x, int y, int width, int sidebar, int detail, float mx, float my) {
+-        float cy = y + 23.0F;
++        float cy = y + HEADER / 2.0F;
+         int accent = accent();
+ 
+         /* The mark: a bead of the accent colour with light caught on top. */
+-        Liquid.shadow(x + 11, cy - 7, x + 25, cy + 7, 7.0F, 6.0F, alpha(accent, 0.55F), 0.0F);
+-        Liquid.rect(x + 11, cy - 7, x + 25, cy + 7, 7.0F, accent, darker(accent));
+-        Liquid.rect(x + 13, cy - 6, x + 23, cy - 1, 3.0F, 0x8CFFFFFF, 0x00FFFFFF);
++        Liquid.shadow(x + 13, cy - 6, x + 25, cy + 6, 6.0F, 5.0F, alpha(accent, 0.55F), 0.0F);
++        Liquid.rect(x + 13, cy - 6, x + 25, cy + 6, 6.0F, accent, darker(accent));
++        Liquid.rect(x + 15, cy - 5, x + 23, cy - 1, 2.5F, 0x8CFFFFFF, 0x00FFFFFF);
+         float brand = font(12.5F, true).draw("Myau+", x + 31, cy, TEXT);
+-        font(12.5F, false).draw("Atlas", x + 31 + brand + 5, cy, FAINT);
++        float brandEnd = x + 31 + brand + 5 + font(12.5F, false).draw("Atlas", x + 31 + brand + 5, cy, FAINT);
+ 
+-        /* The search box is scoped to the selected top-level page. */
+-        float sx = x + sidebar + 12;
+-        float sx2 = x + width - detail - 12;
+-        float sy = y + 11;
+-        float sy2 = y + 35.0F;
+-        float scy = (sy + sy2) / 2.0F;
+-        boolean searchable = !"Client Settings".equals(this.page);
++        /* One row: the page tabs after the brand, the HUD editor and the
++           dark/light switch on the right, and the search box filling the rest. */
++        float tabsEnd = drawPageTabs(brandEnd + 14, cy, mx, my);
++
++        float right = x + width - 12;
++        float editorWidth = font(8.5F, true).width("HUD Editor") + 22;
++        float editorX = right - editorWidth;
++        drawButton("hudEditor", null, editorX, cy, editorWidth, "HUD Editor", 0, mx, my);
++        if (mx >= editorX && mx <= right && my >= cy - 10 && my <= cy + 10) {
++            this.hint = "Move the HUD elements on screen";
++        }
++        float modeLeft = drawModeSwitch(editorX - 10, cy, width >= 600, mx, my);
++
++        /* Search covers every page; results from the other page are marked in the list. */
++        float sx = tabsEnd + 12;
++        float sx2 = modeLeft - 10;
++        float sy = cy - 11.0F;
++        float sy2 = cy + 11.0F;
++        float scy = cy;
++        boolean searchable = !"Client Settings".equals(this.page) && sx2 - sx >= 70.0F;
+         if (searchable) {
+             hit("search", null, sx, sy, sx2, sy2);
+         }
+@@ -969,17 +1002,17 @@
+         float focus = ease("searchFocus", this.searchFocused || !this.search.isEmpty(), 12.0F);
+         float lift = ease("searchHover", hovered, 12.0F);
+         if (searchable && focus > 0.01F) {
+-            Liquid.shadow(sx, sy, sx2, sy2, 12.0F, 7.0F, alpha(accent, 0.32F * focus), 0.0F);
++            Liquid.shadow(sx, sy, sx2, sy2, 11.0F, 7.0F, alpha(accent, 0.32F * focus), 0.0F);
+         }
+         if (searchable) {
+-            Liquid.rect(sx, sy, sx2, sy2, 12.0F, alpha(WHITE, 0.075F + 0.03F * lift + 0.03F * focus),
+-                    alpha(WHITE, 0.045F + 0.015F * lift));
+-            Liquid.rim(sx, sy, sx2, sy2, 12.0F, 1.0F, blend(0x33FFFFFF, alpha(accent, 0.8F), focus),
+-                    0x0DFFFFFF);
++            Liquid.rect(sx, sy, sx2, sy2, 11.0F, alpha(INK, 0.075F + 0.03F * lift + 0.03F * focus),
++                    alpha(INK, 0.045F + 0.015F * lift));
++            Liquid.rim(sx, sy, sx2, sy2, 11.0F, 1.0F, blend(ink(0x33), alpha(accent, 0.8F), focus),
++                    ink(0x0D));
+             icon("search", sx + 12, scy, focus > 0.5F ? TEXT : FAINT);
+             LiquidFont body = font(9.0F, false);
+             if (this.search.isEmpty()) {
+-                body.draw(this.searchFocused ? "" : "Search " + this.page.toLowerCase(), sx + 23, scy, FAINT);
++                body.draw(this.searchFocused ? "" : "Search all modules", sx + 23, scy, FAINT);
+             } else {
+                 float typed = body.draw(body.trim(this.search, sx2 - sx - 70), sx + 23, scy, TEXT);
+                 String results = visibleModules().size() + " found";
+@@ -994,63 +1027,94 @@
+             }
+         }
+ 
+-        /* How much is switched on, everywhere. */
+-        String active = enabledCount() + " active";
+-        LiquidFont count = font(9.0F, false);
+-        float cw = count.drawRight(active, x + width - 16, cy, DIM);
+-        float dotX = x + width - 16 - cw - 8.5F;
+-        Liquid.shadow(dotX - 2.5F, cy - 2.5F, dotX + 2.5F, cy + 2.5F, 2.5F, 3.0F, alpha(accent, 0.9F), 0.0F);
+-        Liquid.dot(dotX, cy, 2.5F, accent);
+-
+         if (hovered) {
+-            this.hint = "Search " + this.page.toLowerCase();
+-        } else if (mx >= x && mx <= x + width && my >= y && my <= y + HEADER - 1) {
++            this.hint = "Search every page  ·  results from the other page are tagged";
++        } else if (this.hint.isEmpty() && mx >= x && mx <= x + width && my >= y && my <= y + HEADER - 1) {
+             this.hint = "Drag here to move the window  ·  Ctrl+R resets it";
+         }
+-        drawPageTabs(x, y, width, mx, my);
+     }
+ 
+-    private void drawPageTabs(int x, int y, int width, float mx, float my) {
++    /**
++     * The page tabs as one compact segmented control. The selection slides
++     * between tabs on a spring and takes each tab's width on the way.
++     * Returns the control's right edge.
++     */
++    private float drawPageTabs(float left, float cy, float mx, float my) {
+         String[] names = {"Modules", "Legit", "Client Settings"};
+-        float tabWidth = 96.0F;
+-        float gap = 6.0F;
+-        float total = tabWidth * names.length + gap * (names.length - 1);
+-        float cursor = x + (width - total) / 2.0F;
+-        float top = y + 40.0F;
+-        float bottom = y + 62.0F;
+-        Liquid.rect(cursor, top, cursor + total, bottom, 9.0F,
+-                alpha(WHITE, 0.055F), alpha(WHITE, 0.025F));
+-        Liquid.rim(cursor, top, cursor + total, bottom, 9.0F, 1.0F,
+-                alpha(WHITE, 0.085F), alpha(WHITE, 0.035F));
++        LiquidFont label = font(8.5F, false);
++        float pad = 9.0F;
++        float top = cy - 9.0F;
++        float bottom = cy + 9.0F;
++        float[] lefts = new float[names.length];
++        float[] widths = new float[names.length];
++        float cursor = left + 2.0F;
++        int activeIndex = 0;
++        for (int i = 0; i < names.length; i++) {
++            widths[i] = label.width(names[i]) + pad * 2.0F;
++            lefts[i] = cursor;
++            cursor += widths[i];
++            if (names[i].equals(this.page)) {
++                activeIndex = i;
++            }
++        }
++        float right = cursor + 2.0F;
++        Liquid.rect(left, top, right, bottom, 9.0F, ink(0x0E), ink(0x08));
++        Liquid.rim(left, top, right, bottom, 9.0F, 1.0F, ink(0x16), ink(0x08));
++
++        /* In the control's own coordinates, so moving the window carries it along. */
++        Spring slide = spring("tabSlide", lefts[activeIndex] - left, 420.0F, 30.0F);
++        Spring size = spring("tabSize", widths[activeIndex], 420.0F, 30.0F);
++        float px = left + slide.value;
++        float px2 = px + size.value;
++        int accent = accent();
++        Liquid.shadow(px, top + 2, px2, bottom - 2, 7.0F, 4.0F, alpha(accent, 0.22F), 0.0F);
++        Liquid.rect(px, top + 2, px2, bottom - 2, 7.0F, alpha(accent, 0.32F), alpha(accent, 0.18F));
++        Liquid.rim(px, top + 2, px2, bottom - 2, 7.0F, 1.0F, alpha(accent, 0.75F), alpha(accent, 0.30F));
++
+         for (int i = 0; i < names.length; i++) {
+             String name = names[i];
+-            float right = cursor + tabWidth;
+-            float innerLeft = cursor + 2.0F;
+-            float innerRight = right - 2.0F;
+-            float innerTop = top + 2.0F;
+-            float innerBottom = bottom - 2.0F;
+-            boolean active = name.equals(this.page);
+-            boolean hovered = mx >= cursor && mx <= right && my >= top && my <= bottom;
+-            hit("page", name, cursor, top, right, bottom);
+-            float glow = active ? 1.0F : ease("page:" + name, hovered, 10.0F);
+-            if (active) {
+-                Liquid.shadow(innerLeft, innerTop, innerRight, innerBottom, 7.0F, 5.0F,
+-                        alpha(accent(), 0.24F), 0.0F);
+-                Liquid.rect(innerLeft, innerTop, innerRight, innerBottom, 7.0F,
+-                        alpha(accent(), 0.30F), alpha(accent(), 0.15F));
+-                Liquid.rim(innerLeft, innerTop, innerRight, innerBottom, 7.0F, 1.0F,
+-                        alpha(accent(), 0.78F), alpha(accent(), 0.34F));
+-            } else if (glow > 0.01F) {
+-                Liquid.rect(innerLeft, innerTop, innerRight, innerBottom, 7.0F,
+-                        alpha(WHITE, 0.08F * glow), alpha(WHITE, 0.035F * glow));
++            float l = lefts[i];
++            float r = l + widths[i];
++            boolean active = i == activeIndex;
++            boolean hovered = mx >= l && mx <= r && my >= top && my <= bottom;
++            hit("page", name, l, top, r, bottom);
++            float glow = active ? 0.0F : ease("page:" + name, hovered, 10.0F);
++            if (glow > 0.01F) {
++                Liquid.rect(l + 1, top + 2, r - 1, bottom - 2, 7.0F,
++                        alpha(INK, 0.08F * glow), alpha(INK, 0.035F * glow));
+             }
+-            font(8.5F, active).drawCentred(name, cursor + tabWidth / 2.0F,
+-                    top + (bottom - top) / 2.0F, active ? TEXT : DIM);
++            font(8.5F, active).drawCentred(name, l + widths[i] / 2.0F, cy, active ? TEXT : blend(DIM, TEXT, glow));
+             if (hovered) {
+                 this.hint = "Open " + name;
+             }
+-            cursor = right + gap;
+         }
++        return right;
++    }
++
++    /**
++     * The dark/light switch, right-aligned at {@code right}: a label (when there
++     * is room for it) and a switch. Returns its left edge.
++     */
++    private float drawModeSwitch(float right, float cy, boolean withLabel, float mx, float my) {
++        boolean light = this.theme.isLight();
++        float switchWidth = 22.0F;
++        float switchX = right - switchWidth;
++        float left = switchX;
++        LiquidFont small = font(8.0F, false);
++        String label = light ? "Light" : "Dark";
++        if (withLabel) {
++            left = switchX - 6 - small.width(label);
++        }
++        hit("themeMode", null, left - 4, cy - 10, right + 2, cy + 10);
++        boolean hovered = mx >= left - 4 && mx <= right + 2 && my >= cy - 10 && my <= cy + 10;
++        if (withLabel) {
++            small.draw(label, left, cy, hovered ? TEXT : DIM);
++        }
++        drawSwitch("themeMode", switchX, cy, switchWidth, 12.0F, light);
++        if (hovered) {
++            this.hint = light ? "Switch the menu and the HUD to dark" : "Switch the menu and the HUD to light";
++        }
++        return left - 4;
+     }
+ 
+     /**
+@@ -1060,7 +1124,7 @@
+     private void drawGrip(int right, int bottom, float mx, float my) {
+         boolean hovered = mx >= right - 14 && mx <= right - 2 && my >= bottom - 14 && my <= bottom - 2;
+         hit("grip", null, right - 14, bottom - 14, right - 2, bottom - 2);
+-        int colour = hovered || this.resizingWindow ? accent() : 0x40FFFFFF;
++        int colour = hovered || this.resizingWindow ? accent() : ink(0x40);
+         Liquid.line(right - 13, bottom - 5, right - 5, bottom - 13, 1.1F, colour);
+         Liquid.line(right - 9, bottom - 5, right - 5, bottom - 9, 1.1F, colour);
+         if (hovered) {
+@@ -1123,12 +1187,12 @@
+             float rowLit = ease("cat:" + name, hovered && !active, 10.0F);
+             if (rowLit > 0.01F) {
+                 Liquid.rect(x + 10, rowY, x + sidebar - 10, rowY + CAT_H, 11.0F,
+-                        alpha(0x12FFFFFF, rowLit), alpha(0x0AFFFFFF, rowLit));
++                        alpha(ink(0x12), rowLit), alpha(ink(0x0A), rowLit));
+             }
+             float cy = rowY + CAT_H / 2.0F;
+-            icon(name, x + 25, cy, active ? TEXT : DIM);
++            icon(sidebarIcon(name), x + 25, cy, active ? TEXT : DIM);
+             font(9.5F, active).draw(font(9.5F, active).trim(name, sidebar - 60), x + 36, cy, active ? TEXT : DIM);
+-            List<Module> list = this.byCategory.get(name);
++            List<Module> list = modulesOf(name);
+             int on = 0;
+             for (Module module : list) {
+                 if (module != null && module.isEnabled()) {
+@@ -1152,7 +1216,7 @@
+             float rowLit = ease("cat:\u0000profiles", hovered && !this.profilesView, 10.0F);
+             if (rowLit > 0.01F) {
+                 Liquid.rect(x + 10, profilesRow, x + sidebar - 10, profilesRow + CAT_H, 11.0F,
+-                        alpha(0x12FFFFFF, rowLit), alpha(0x0AFFFFFF, rowLit));
++                        alpha(ink(0x12), rowLit), alpha(ink(0x0A), rowLit));
+             }
+             float cy = profilesRow + CAT_H / 2.0F;
+             icon("folder", x + 25, cy, this.profilesView ? TEXT : DIM);
+@@ -1170,7 +1234,7 @@
+             float rowLit = ease("cat:#appearance", hovered && !this.appearanceView, 10.0F);
+             if (rowLit > 0.01F) {
+                 Liquid.rect(x + 10, appearanceRow, x + sidebar - 10, appearanceRow + CAT_H, 11.0F,
+-                        alpha(0x12FFFFFF, rowLit), alpha(0x0AFFFFFF, rowLit));
++                        alpha(ink(0x12), rowLit), alpha(ink(0x0A), rowLit));
+             }
+             float cy = appearanceRow + CAT_H / 2.0F;
+             icon("palette", x + 25, cy, this.appearanceView ? TEXT : DIM);
+@@ -1230,9 +1294,9 @@
+         if (focus > 0.01F) {
+             Liquid.shadow(x + 10, fy, buttonX - 6, fy2, 11.0F, 6.0F, alpha(accent, 0.30F * focus), 0.0F);
+         }
+-        Liquid.rect(x + 10, fy, buttonX - 6, fy2, 11.0F, alpha(WHITE, 0.07F + 0.03F * focus), 0x0BFFFFFF);
+-        Liquid.rim(x + 10, fy, buttonX - 6, fy2, 11.0F, 1.0F, blend(0x2EFFFFFF, alpha(accent, 0.8F), focus),
+-                0x0AFFFFFF);
++        Liquid.rect(x + 10, fy, buttonX - 6, fy2, 11.0F, alpha(INK, 0.07F + 0.03F * focus), ink(0x0B));
++        Liquid.rim(x + 10, fy, buttonX - 6, fy2, 11.0F, 1.0F, blend(ink(0x2E), alpha(accent, 0.8F), focus),
++                ink(0x0A));
+         LiquidFont body = font(9.0F, false);
+         float typed = 0.0F;
+         if (this.profileName.isEmpty()) {
+@@ -1302,7 +1366,7 @@
+             float hoverLit = ease("prow:" + info.name, hovered && !info.name.equals(this.profileSelected), 9.0F);
+             if (hoverLit > 0.01F) {
+                 Liquid.rect(x + 10, rowY, x + width - 10, rowY + ROW_H, 9.0F,
+-                        alpha(0x10FFFFFF, hoverLit), alpha(0x0AFFFFFF, hoverLit));
++                        alpha(ink(0x10), hoverLit), alpha(ink(0x0A), hoverLit));
+             }
+             float saved = pulseAt("saved:" + info.name, 600L);
+             if (saved >= 0.0F) {
+@@ -1396,8 +1460,8 @@
+         List<String> lines = body.wrap(names.length() == 0 ? "Nothing enabled" : names.toString(), cardX2 - cardX - 20);
+         float needed = lines.size() * 11 + 12;
+         cardBottom = Math.min(cardBottom, cursor + needed);
+-        Liquid.rect(cardX, cursor, cardX2, cardBottom, 12.0F, 0x0EFFFFFF, 0x09FFFFFF);
+-        Liquid.rim(cardX, cursor, cardX2, cardBottom, 12.0F, 1.0F, 0x24FFFFFF, 0x0AFFFFFF);
++        Liquid.rect(cardX, cursor, cardX2, cardBottom, 12.0F, ink(0x0E), ink(0x09));
++        Liquid.rim(cardX, cursor, cardX2, cardBottom, 12.0F, 1.0F, ink(0x24), ink(0x0A));
+         clip(sr, cardX, cursor + 1, cardX2 - cardX, cardBottom - cursor - 2);
+         float lineY = cursor + 11;
+         for (String line : lines) {
+@@ -1496,7 +1560,7 @@
+             float hoverLit = ease("grp:" + group, hovered && !active, 9.0F);
+             if (hoverLit > 0.01F) {
+                 Liquid.rect(x + 10, rowY, x + width - 10, rowY + ROW_H, 9.0F,
+-                        alpha(0x10FFFFFF, hoverLit), alpha(0x0AFFFFFF, hoverLit));
++                        alpha(ink(0x10), hoverLit), alpha(ink(0x0A), hoverLit));
+             }
+             icon(group, x + 22, cy, active ? TEXT : DIM);
+             font(9.5F, active).draw(group, x + 34, cy, active ? TEXT : DIM);
+@@ -1559,7 +1623,7 @@
+         Liquid.rect(x + squash, y + squash * 0.5F, x + w - squash, y2 - squash * 0.5F, 10.0F,
+                 alpha(colour, fill), alpha(colour, fill * 0.7F));
+         Liquid.rim(x + squash, y + squash * 0.5F, x + w - squash, y2 - squash * 0.5F, 10.0F, 1.0F,
+-                alpha(style == 1 ? 0xFFFFFFFF : colour, style == 1 ? 0.2F : 0.65F), 0x0AFFFFFF);
++                alpha(style == 1 ? 0xFFFFFFFF : colour, style == 1 ? 0.2F : 0.65F), ink(0x0A));
+         bold.drawCentred(label, x + w / 2.0F, cy, TEXT);
+         if (hovered) {
+             if ("profileLoad".equals(kind)) {
+@@ -1583,8 +1647,8 @@
+ 
+     /** Who is playing, and where: the account, the server and the ping. */
+     private void drawProfile(int x, float y, int sidebar) {
+-        Liquid.rect(x + 10, y, x + sidebar - 10, y + 28, 11.0F, 0x0DFFFFFF, 0x08FFFFFF);
+-        Liquid.rim(x + 10, y, x + sidebar - 10, y + 28, 11.0F, 1.0F, 0x1FFFFFFF, 0x08FFFFFF);
++        Liquid.rect(x + 10, y, x + sidebar - 10, y + 28, 11.0F, ink(0x0D), ink(0x08));
++        Liquid.rim(x + 10, y, x + sidebar - 10, y + 28, 11.0F, 1.0F, ink(0x1F), ink(0x08));
+         String name = mc.getSession() == null ? "Player" : mc.getSession().getUsername();
+         float cy = y + 14;
+         Liquid.rect(x + 16, cy - 7, x + 30, cy + 7, 7.0F, 0xFF8E7CFF, accent());
+@@ -1628,8 +1692,18 @@
+         }
+         String title = searching ? "Search" : this.category;
+         font(15.0F, true).draw(title, x + 16, y + 17, TEXT);
++        int elsewhere = 0;
++        if (searching) {
++            for (Module module : modules) {
++                if (!belongsOnPage(module)) {
++                    elsewhere++;
++                }
++            }
++        }
+         String subtitle = searching
+-                ? modules.size() + (modules.size() == 1 ? " result" : " results") + "  ·  " + on + " enabled"
++                ? modules.size() + (modules.size() == 1 ? " result" : " results")
++                        + (elsewhere > 0 ? "  ·  " + elsewhere + " from another page" : "")
++                        + "  ·  " + on + " enabled"
+                 : modules.size() + " modules  ·  " + on + " enabled";
+         font(8.0F, false).draw(subtitle, x + 16, y + 31, FAINT);
+ 
+@@ -1694,7 +1768,15 @@
+             float hoverLit = ease("row:" + module.getName(), hovered && !isSelected, 9.0F);
+             if (hoverLit > 0.01F) {
+                 Liquid.rect(x + 10, rowY, x + width - 10, rowY + ROW_H, 9.0F,
+-                        alpha(0x10FFFFFF, hoverLit), alpha(0x0AFFFFFF, hoverLit));
++                        alpha(ink(0x10), hoverLit), alpha(ink(0x0A), hoverLit));
++            }
++            /* A result from the other page looks borrowed: its own tint, a dashed
++               edge, and a tag naming the page it lives on. */
++            boolean foreign = searching && !belongsOnPage(module);
++            if (foreign) {
++                Liquid.rect(x + 10, rowY, x + width - 10, rowY + ROW_H, 9.0F,
++                        alpha(foreignColour(), 0.10F), alpha(foreignColour(), 0.05F));
++                dashedRim(x + 10, rowY, x + width - 10, rowY + ROW_H, 9.0F, alpha(foreignColour(), 0.75F));
+             }
+             float cy = rowY + ROW_H / 2.0F;
+             int accent = accent();
+@@ -1718,7 +1800,7 @@
+                 Liquid.shadow(x + 18, cy - 2.5F, x + 23, cy + 2.5F, 2.5F, 4.0F, alpha(accent, 0.9F * onLit), 0.0F);
+             }
+             if (dots) {
+-                Liquid.dot(x + 20.5F, cy, 2.5F, blend(0x2EFFFFFF, accent, onLit));
++                Liquid.dot(x + 20.5F, cy, 2.5F, blend(ink(0x2E), accent, onLit));
+             }
+ 
+             LiquidFont name = font(9.5F, false);
+@@ -1738,14 +1820,27 @@
+             if (mx >= switchX - 4 && mx <= switchX + 26 && my >= cy - 9 && my <= cy + 9) {
+                 this.hint = (module.isEnabled() ? "Turn off " : "Turn on ") + module.getName();
+             }
++            float tagRight = switchX - 8;
++            if (foreign) {
++                String source = pageOf(module);
++                LiquidFont tag = font(7.0F, true);
++                float tagLeft = tagRight - tag.width(source) - 10;
++                Liquid.rect(tagLeft, cy - 5.5F, tagRight, cy + 5.5F, 5.5F,
++                        alpha(foreignColour(), 0.28F), alpha(foreignColour(), 0.18F));
++                tag.drawCentred(source, (tagLeft + tagRight) / 2.0F, cy, foreignText());
++                tagRight = tagLeft - 6;
++            }
+             String suffix = this.theme.moduleStatus.getValue() ? suffixOf(module) : "";
+             if (!suffix.isEmpty()) {
+                 LiquidFont small = font(8.0F, false);
+-                float room = switchX - 8 - (nameX + nameWidth + (module.isHidden() ? 22 : 10));
++                float room = tagRight - (nameX + nameWidth + (module.isHidden() ? 22 : 10));
+                 if (room > 20) {
+-                    small.drawRight(small.trim(suffix, room), switchX - 8, cy, FAINT);
++                    small.drawRight(small.trim(suffix, room), tagRight, cy, FAINT);
+                 }
+             }
++            if (hovered && foreign && this.hint.isEmpty()) {
++                this.hint = "From the " + pageOf(module) + " page  ·  its settings open here";
++            }
+             if (hovered && this.hint.isEmpty()) {
+                 this.hint = module.getDescription() == null || module.getDescription().isEmpty()
+                         ? "Click to show the settings  ·  the switch turns it on or off"
+@@ -1760,7 +1855,7 @@
+             float thumb = Math.max(18.0F, track * maxRows / (float) modules.size());
+             float along = (track - thumb) * (shown / (this.listMaxScroll * (float) ROW));
+             float barX = x + width - 5;
+-            Liquid.rect(barX, top + along, barX + 2.5F, top + along + thumb, 1.25F, 0x40FFFFFF);
++            Liquid.rect(barX, top + along, barX + 2.5F, top + along + thumb, 1.25F, ink(0x40));
+         }
+     }
+ 
+@@ -1781,11 +1876,11 @@
+         float lit = Math.max(0.0F, Math.min(1.0F, t));
+         int accent = accent();
+         float y = cy - h / 2.0F;
+-        Liquid.rect(x, y, x + w, y + h, h / 2.0F, alpha(0x1AFFFFFF, 1.0F - lit));
++        Liquid.rect(x, y, x + w, y + h, h / 2.0F, alpha(ink(0x1A), 1.0F - lit));
+         if (lit > 0.01F) {
+             Liquid.rect(x, y, x + w, y + h, h / 2.0F, alpha(accent, 0.95F * lit), alpha(accent, 0.80F * lit));
+         }
+-        Liquid.rim(x, y, x + w, y + h, h / 2.0F, 1.0F, 0x38FFFFFF, 0x0FFFFFFF);
++        Liquid.rim(x, y, x + w, y + h, h / 2.0F, 1.0F, ink(0x38), ink(0x0F));
+         float pad = 1.5F;
+         float knob = h - pad * 2.0F;
+         float stretch = Math.min(knob * 0.45F, Math.abs(s.velocity) * this.jelly * 0.018F * knob);
+@@ -1901,8 +1996,8 @@
+             return;
+         }
+         if (properties.isEmpty()) {
+-            Liquid.rect(cardX, cardTop, cardX2, cardTop + 28, 12.0F, 0x0EFFFFFF, 0x09FFFFFF);
+-            Liquid.rim(cardX, cardTop, cardX2, cardTop + 28, 12.0F, 1.0F, 0x24FFFFFF, 0x0AFFFFFF);
++            Liquid.rect(cardX, cardTop, cardX2, cardTop + 28, 12.0F, ink(0x0E), ink(0x09));
++            Liquid.rim(cardX, cardTop, cardX2, cardTop + 28, 12.0F, 1.0F, ink(0x24), ink(0x0A));
+             body.draw("No settings", cardX + 10, cardTop + 14, FAINT);
+             return;
+         }
+@@ -1917,8 +2012,8 @@
+         if (this.detailScroll > this.detailMaxScroll) {
+             this.detailScroll = this.detailMaxScroll;
+         }
+-        Liquid.rect(cardX, cardTop, cardX2, cardBottom, 12.0F, 0x0EFFFFFF, 0x09FFFFFF);
+-        Liquid.rim(cardX, cardTop, cardX2, cardBottom, 12.0F, 1.0F, 0x24FFFFFF, 0x0AFFFFFF);
++        Liquid.rect(cardX, cardTop, cardX2, cardBottom, 12.0F, ink(0x0E), ink(0x09));
++        Liquid.rim(cardX, cardTop, cardX2, cardBottom, 12.0F, 1.0F, ink(0x24), ink(0x0A));
+ 
+         float scroll = scrollEase("detailScroll", this.detailScroll);
+         float rowY = cardTop + 2 - scroll;
+@@ -1937,7 +2032,7 @@
+                     font(7.0F, true).drawTracked(myau.module.ModuleDocs.heading(heading).toUpperCase(java.util.Locale.ROOT), cardX + 12,
+                             rowY + HEADING_HEIGHT / 2.0F + 1, accentText(), 0.6F);
+                     Liquid.rect(cardX + 10, rowY + HEADING_HEIGHT - 1, cardX2 - 10, rowY + HEADING_HEIGHT - 0.5F,
+-                            0.0F, 0x1AFFFFFF);
++                            0.0F, ink(0x1A));
+                 }
+                 rowY += HEADING_HEIGHT;
+                 firstRow = true;
+@@ -1948,7 +2043,7 @@
+             }
+             if (rowY + rowHeight > clipTop) {
+                 if (!firstRow) {
+-                    Liquid.rect(cardX + 10, rowY, cardX2 - 10, rowY + 0.5F, 0.0F, 0x12FFFFFF);
++                    Liquid.rect(cardX + 10, rowY, cardX2 - 10, rowY + 0.5F, 0.0F, ink(0x12));
+                 }
+                 AtlasInspector.note("settings", property.getName(),
+                         cardX + 10, rowY, cardX2 - 10, rowY + rowHeight);
+@@ -1963,7 +2058,7 @@
+             float thumb = Math.max(16.0F, track * visible / content);
+             float along = (track - thumb) * (scroll / this.detailMaxScroll);
+             Liquid.rect(cardX2 - 5, clipTop + 4 + along, cardX2 - 2.5F, clipTop + 4 + along + thumb,
+-                    1.25F, 0x40FFFFFF);
++                    1.25F, ink(0x40));
+         }
+     }
+ 
+@@ -1992,10 +2087,10 @@
+             Liquid.shadow(x1, y, x3, y2, 9.0F, 5.0F, alpha(accent, 0.30F * on), 0.0F);
+         }
+         Liquid.rect(x1, y + squash * 0.5F, x3, y2 - squash * 0.5F, 9.0F,
+-                blend(alpha(WHITE, 0.07F + 0.04F * hover), alpha(accent, 0.24F), on),
+-                blend(alpha(WHITE, 0.04F + 0.02F * hover), alpha(accent, 0.14F), on));
++                blend(alpha(INK, 0.07F + 0.04F * hover), alpha(accent, 0.24F), on),
++                blend(alpha(INK, 0.04F + 0.02F * hover), alpha(accent, 0.14F), on));
+         Liquid.rim(x1, y + squash * 0.5F, x3, y2 - squash * 0.5F, 9.0F, 1.0F,
+-                blend(0x2EFFFFFF, alpha(accent, 0.6F), on), 0x0AFFFFFF);
++                blend(ink(0x2E), alpha(accent, 0.6F), on), ink(0x0A));
+         icon(iconName, x + 11, cy, blend(DIM, accent, on));
+         float labelWidth = small.draw(label, x + 20, cy, FAINT);
+         bold.draw(value, x + 20 + labelWidth + 5, cy, TEXT);
+@@ -2128,9 +2223,9 @@
+             label.draw(label.trim(property.getLabel(), Math.min(width - 70, valueLeft - labelX - 8)),
+                     labelX, cy, DIM);
+             if (beingEdited) {
+-                Liquid.rect(valueLeft - 3, cy - 6.5F, right + 3, cy + 6.5F, 5.0F, 0x1FFFFFFF);
++                Liquid.rect(valueLeft - 3, cy - 6.5F, right + 3, cy + 6.5F, 5.0F, ink(0x1F));
+                 Liquid.rim(valueLeft - 3, cy - 6.5F, right + 3, cy + 6.5F, 5.0F, 1.0F,
+-                        alpha(accent, 0.7F), 0x14FFFFFF);
++                        alpha(accent, 0.7F), ink(0x14));
+             }
+             float commit = pulseAt("edit:" + property.getName(), 360L);
+             if (commit >= 0.0F) {
+@@ -2174,7 +2269,7 @@
+                 }
+                 knobColour = AtlasTheme.hsb(currentOf(property), 0.75F, 1.0F);
+             } else {
+-                Liquid.rect(barX, barY - 1.5F, barX2, barY + 1.5F, 1.5F, 0x1FFFFFFF);
++                Liquid.rect(barX, barY - 1.5F, barX2, barY + 1.5F, 1.5F, ink(0x1F));
+                 if (fillX > barX + 0.5F) {
+                     Liquid.shadow(barX, barY - 1.5F, fillX, barY + 1.5F, 1.5F, 4.0F, alpha(accent, 0.55F), 0.0F);
+                     Liquid.rectH(barX, barY - 1.5F, fillX, barY + 1.5F, 1.5F, alpha(accent, 0.75F), accent);
+@@ -2188,7 +2283,7 @@
+             Liquid.shadow(fillX - r, barY - r, fillX + r, barY + r, r, 3.0F, 0x66000000, 1.0F);
+             if (grow.value > 0.05F && Liquid.glass()) {
+                 Liquid.Style drop = new Liquid.Style(r * 0.8F, 3.0F, 0.15F, 1.1F, 1.15F,
+-                        0x14FFFFFF, 0.85F, 0.0F, 0.0F);
++                        ink(0x14), 0.85F, 0.0F, 0.0F);
+                 drop.magnify = 1.0F + 0.45F * Math.min(1.0F, grow.value);
+                 this.lenses.add(new Lens(fillX - r, barY - r, fillX + r, barY + r, r, drop,
+                         new float[]{x, paneTop, width, paneBottom - paneTop}));
+@@ -2253,9 +2348,9 @@
+                 hit("type", property, right - clippedWidth - 6, cy - 7, right + 4, cy + 7);
+             }
+             if (beingEdited) {
+-                Liquid.rect(right - clippedWidth - 5, cy - 6.5F, right + 3, cy + 6.5F, 5.0F, 0x1FFFFFFF);
++                Liquid.rect(right - clippedWidth - 5, cy - 6.5F, right + 3, cy + 6.5F, 5.0F, ink(0x1F));
+                 Liquid.rim(right - clippedWidth - 5, cy - 6.5F, right + 3, cy + 6.5F, 5.0F, 1.0F,
+-                        alpha(accent, 0.7F), 0x14FFFFFF);
++                        alpha(accent, 0.7F), ink(0x14));
+                 if ((System.currentTimeMillis() / 500L) % 2L == 0L) {
+                     Liquid.rect(right + 1, cy - 4.5F, right + 2, cy + 4.5F, 0.0F, accent);
+                 }
+@@ -2332,12 +2427,12 @@
+                     + "  ·  click the hex to type one";
+         }
+         if (beingEdited) {
+-            Liquid.rect(hexLeft - 3, cy - 6.5F, hexRight + 3, cy + 6.5F, 5.0F, 0x1FFFFFFF);
+-            Liquid.rim(hexLeft - 3, cy - 6.5F, hexRight + 3, cy + 6.5F, 5.0F, 1.0F, alpha(accent, 0.7F), 0x14FFFFFF);
++            Liquid.rect(hexLeft - 3, cy - 6.5F, hexRight + 3, cy + 6.5F, 5.0F, ink(0x1F));
++            Liquid.rim(hexLeft - 3, cy - 6.5F, hexRight + 3, cy + 6.5F, 5.0F, 1.0F, alpha(accent, 0.7F), ink(0x14));
+         }
+         valueFont.draw(hex, hexLeft, cy, beingEdited ? accent : TEXT);
+         Liquid.rect(swatchLeft, cy - 6, right, cy + 6, 4.0F, 0xFF000000 | rgb);
+-        Liquid.rim(swatchLeft, cy - 6, right, cy + 6, 4.0F, 1.0F, 0x40FFFFFF, 0x20FFFFFF);
++        Liquid.rim(swatchLeft, cy - 6, right, cy + 6, 4.0F, 1.0F, ink(0x40), ink(0x20));
+         if (!open) {
+             return;
+         }
+@@ -2356,7 +2451,7 @@
+         float boxY2 = boxY + 50;
+         Liquid.rectH(boxX, boxY, boxX2, boxY2, 4.0F, 0xFFFFFFFF, pure);
+         Liquid.rect(boxX, boxY, boxX2, boxY2, 4.0F, 0x00000000, 0xFF000000);
+-        Liquid.rim(boxX, boxY, boxX2, boxY2, 4.0F, 1.0F, 0x30FFFFFF, 0x18FFFFFF);
++        Liquid.rim(boxX, boxY, boxX2, boxY2, 4.0F, 1.0F, ink(0x30), ink(0x18));
+         float px = boxX + (boxX2 - boxX) * this.colorHsb[1];
+         float py = boxY + (boxY2 - boxY) * (1.0F - this.colorHsb[2]);
+         Liquid.ring(px, py, 3.5F, 1.5F, 0xFFFFFFFF);
+@@ -2447,7 +2542,7 @@
+         Liquid.lens(left + squeeze, y1, right - squeeze, y2, 12.0F, popover);
+         if (!Liquid.glass()) {
+             Liquid.rect(left + squeeze, y1, right - squeeze, y2, 12.0F, 0xF0101420, 0xF00B0E14);
+-            Liquid.rim(left + squeeze, y1, right - squeeze, y2, 12.0F, 1.0F, 0x40FFFFFF, 0x0FFFFFFF);
++            Liquid.rim(left + squeeze, y1, right - squeeze, y2, 12.0F, 1.0F, ink(0x40), ink(0x0F));
+         }
+         if (g < 0.6F) {
+             return;
+@@ -2464,7 +2559,7 @@
+             int swatch = this.theme.swatch(this.dropdown, i, clickGuiAccent());
+             if (swatch != 0) {
+                 Liquid.dot(left + 12, cy, 3.5F, alpha(swatch, content));
+-                Liquid.ring(left + 12, cy, 3.5F, 0.8F, alpha(0x40FFFFFF, content));
++                Liquid.ring(left + 12, cy, 3.5F, 0.8F, alpha(ink(0x40), content));
+             }
+             if (i == current) {
+                 Liquid.rect(left + 4, rowY + 1, right - 4, rowY + rowHeight - 1, 7.0F,
+@@ -2476,7 +2571,7 @@
+                 }
+             } else if (hovered) {
+                 Liquid.rect(left + 4, rowY + 1, right - 4, rowY + rowHeight - 1, 7.0F,
+-                        alpha(0x1AFFFFFF, content));
++                        alpha(ink(0x1A), content));
+             }
+             (i == current ? itemBold : item).draw(modes[i], left + 22, cy,
+                     alpha(i == current ? TEXT : (hovered ? TEXT : DIM), content));
+@@ -2644,6 +2739,63 @@
+         return this.theme.accent(clickGuiAccent());
+     }
+ 
++    /** A neutral of the given alpha: white in dark mode, ink in light mode. */
++    private static int ink(int alpha) {
++        return (alpha << 24) | (INK & 0x00FFFFFF);
++    }
++
++    /** Sets the text and neutral colours for the current mode, and tells the HUD. */
++    private void paintPalette() {
++        boolean light = this.theme.isLight();
++        myau.ui.UiMode.setLight(light);
++        TEXT = light ? 0xFF161A21 : 0xFFF5F8FF;
++        DIM = light ? 0xD1404958 : 0xD1C3CEDF;
++        FAINT = light ? 0xA6667080 : 0x9E93A3BA;
++        INK = light ? 0xFF0E1726 : 0xFFFFFFFF;
++    }
++
++    /** The modules behind a sidebar row: a Legit sub-group on the Legit page, a category elsewhere. */
++    private List<Module> modulesOf(String name) {
++        List<Module> list = "Legit".equals(this.page) ? this.legitGroups.get(name) : this.byCategory.get(name);
++        return list == null ? new ArrayList<Module>() : list;
++    }
++
++    private String sidebarIcon(String name) {
++        return "Legit".equals(this.page) ? LegitGroups.icon(name) : name;
++    }
++
++    /** The top-level page a module lives on, as its tab is labelled. */
++    private static String pageOf(Module module) {
++        return ModuleCategories.of(module.getClass()) == Category.LEGIT ? "Legit" : "Modules";
++    }
++
++    /** The colour that marks a search result from the other page. */
++    private static int foreignColour() {
++        return myau.ui.UiMode.isLight() ? 0xFF6A4BD6 : 0xFFB59CFF;
++    }
++
++    private static int foreignText() {
++        return myau.ui.UiMode.isLight() ? 0xFF3E2A99 : 0xFFE9E1FF;
++    }
++
++    /** A dashed outline along the straight parts of a rounded rectangle. */
++    private static void dashedRim(float x, float y, float x2, float y2, float radius, int colour) {
++        float dash = 4.0F;
++        float gap = 3.0F;
++        float t = 1.0F;
++        for (float px = x + radius; px < x2 - radius; px += dash + gap) {
++            float end = Math.min(px + dash, x2 - radius);
++            Liquid.rect(px, y, end, y + t, 0.0F, colour);
++            Liquid.rect(px, y2 - t, end, y2, 0.0F, colour);
++        }
++        float inset = radius * 0.6F;
++        for (float py = y + inset; py < y2 - inset; py += dash + gap) {
++            float end = Math.min(py + dash, y2 - inset);
++            Liquid.rect(x, py, x + t, end, 0.0F, colour);
++            Liquid.rect(x2 - t, py, x2, end, 0.0F, colour);
++        }
++    }
++
+     private int clickGuiAccent() {
+         try {
+             myau.module.modules.ClickGUIModule gui =
+@@ -2738,6 +2890,16 @@
+             this.grabY = this.userHeight - mouseY;
+             return;
+         }
++        if ("themeMode".equals(target.kind)) {
++            this.theme.toggleMode();
++            paintPalette();
++            return;
++        }
++        if ("hudEditor".equals(target.kind)) {
++            pulse("btn:hudEditor");
++            this.mc.displayGuiScreen(new myau.ui.hud.HudEditorScreen(this));
++            return;
++        }
+         if ("page".equals(target.kind)) {
+             selectPage((String) target.payload);
+             return;
+@@ -3268,6 +3430,7 @@
+         this.openedFor = 0.0F;
+         this.open.snap(0.92F);
+         applyTheme();
++        paintPalette();
+         this.lastFrame = 0L;
+         this.lit.clear();
+         this.springs.clear();
+--- a/src/main/java/myau/ui/impl/clickgui/atlas/AtlasTheme.java
++++ b/src/main/java/myau/ui/impl/clickgui/atlas/AtlasTheme.java
+@@ -41,6 +41,8 @@
+     static final String[] ACCENTS = {"ClickGUI", "Sky", "Mint", "Violet", "Rose", "Amber", "Coral", "Ice", "Custom"};
+     private static final int[] ACCENT_COLOURS = {0, 0xFF4FC3F7, 0xFF5FFFC1, 0xFFA78BFA, 0xFFFF6B9D,
+             0xFFFFC857, 0xFFFF8A65, 0xFFB3E5FC, 0};
++    /** The glass colour in light mode. */
++    private static final int LIGHT_TINT = 0xFFF3F5F9;
+     static final String[] TINTS = {"Midnight", "Graphite", "Ocean", "Aurora", "Ember", "Forest", "Custom"};
+     private static final int[] TINT_COLOURS = {0xFF0E121D, 0xFF121316, 0xFF08182A, 0xFF1A1030,
+             0xFF24120C, 0xFF0B1A12, 0};
+@@ -49,11 +51,13 @@
+             "Google-Sans.ttf", "nunito.ttf", "harmonyOS_Sans.ttf", null};
+ 
+     // ---- Colors
++    /* Dark or light, for this menu and for the HUD (2026-10-05). Shared with the HUD through myau.ui.UiMode. */
++    final ModeProperty mode = new ModeProperty("appearance-mode", 0, new String[]{"Dark", "Light"});
+     final ModeProperty accent = new ModeProperty("accent", 0, ACCENTS);
+     final IntProperty accentHue = new IntProperty("accent-hue", 200, 0, 360, () -> this.accent.getValue() == 8);
+     final PercentProperty accentSaturation = new PercentProperty("accent-saturation", 70, 0, 100,
+             () -> this.accent.getValue() == 8);
+-    final ModeProperty tint = new ModeProperty("glass-tint", 0, TINTS);
++    final ModeProperty tint = new ModeProperty("glass-tint", 1, TINTS);
+     final IntProperty tintHue = new IntProperty("tint-hue", 225, 0, 360, () -> this.tint.getValue() == 6);
+     final PercentProperty opacity = new PercentProperty("glass-opacity", 42, 0, 90, null);
+ 
+@@ -122,7 +126,7 @@
+                         + "Setting names stay as they are: they are the config keys.",
+                 this.language);
+         group("Colors", "The accent that marks what is on and selected, and the colour of the glass itself.",
+-                this.accent, this.accentHue, this.accentSaturation, this.tint, this.tintHue, this.opacity);
++                this.mode, this.accent, this.accentHue, this.accentSaturation, this.tint, this.tintHue, this.opacity);
+         group("Glass", "The window's material: how much it blurs and bends the world behind it, and how "
+                         + "light catches its edge.",
+                 this.blur, this.saturation, this.brightness, this.refraction, this.bezel, this.clearEdge,
+@@ -201,13 +205,30 @@
+     }
+ 
+     Liquid.Style pane() {
+-        int alpha = Math.round(this.opacity.getValue() / 100.0F * 255.0F);
++        boolean light = isLight();
++        /* Light glass needs more body than dark: dark text over a thin pane
++           loses to whatever bright thing is behind it. */
++        int percent = light ? Math.max(this.opacity.getValue(), 72) : this.opacity.getValue();
++        int alpha = Math.round(percent / 100.0F * 255.0F);
++        int base = light ? LIGHT_TINT : tintBase();
++        float brightness = this.brightness.getValue() / 100.0F;
++        if (light) {
++            brightness = Math.max(1.12F, brightness);
++        }
+         return new Liquid.Style(this.bezel.getValue(), 26.0F * this.refraction.getValue() / 100.0F,
+                 this.dispersion.getValue() / 100.0F, this.saturation.getValue() / 100.0F,
+-                this.brightness.getValue() / 100.0F, (alpha << 24) | (tintBase() & 0x00FFFFFF),
++                brightness, (alpha << 24) | (base & 0x00FFFFFF),
+                 this.edgeLight.getValue() / 100.0F, 0.10F, this.clearEdge.getValue() / 100.0F);
+     }
+ 
++    boolean isLight() {
++        return this.mode.getValue() == 1;
++    }
++
++    void toggleMode() {
++        this.mode.setValue(isLight() ? 0 : 1);
++    }
++
+     Liquid.Style pill(int accent, float shown) {
+         int alpha = Math.round(this.selectionTint.getValue() / 100.0F * shown * 255.0F);
+         return new Liquid.Style(7.0F, 5.0F * this.selectionRefraction.getValue() / 100.0F, 0.12F, 1.15F, 1.12F,
+@@ -275,9 +296,11 @@
+     // ---- presets ------------------------------------------------------
+ 
+     void reset() {
++        int keepMode = this.mode.getValue();
+         for (Property<?> property : all()) {
+             resetOne(property);
+         }
++        this.mode.setValue(keepMode);
+     }
+ 
+     @SuppressWarnings("unchecked")
+--- a/src/main/java/myau/module/modules/LegitHUD.java
++++ b/src/main/java/myau/module/modules/LegitHUD.java
+@@ -1,5 +1,8 @@
+ package myau.module.modules;
+ 
++import myau.ui.UiMode;
++import myau.ui.hud.HudLayout;
++
+ import myau.event.EventTarget;
+ import myau.events.LeftClickMouseEvent;
+ import myau.events.Render2DEvent;
+@@ -58,39 +61,45 @@
+ 
+     @EventTarget
+     public void onRender2D(Render2DEvent event) {
+-        if (!this.isEnabled() || mc.thePlayer == null || mc.theWorld == null || mc.currentScreen != null) return;
++        if (!this.isEnabled() || mc.thePlayer == null || mc.theWorld == null
++                || (mc.currentScreen != null && !HudLayout.isEditing())) return;
+ 
+         ScaledResolution resolution = new ScaledResolution(mc);
+         int screenWidth = resolution.getScaledWidth();
+         int screenHeight = resolution.getScaledHeight();
+         int textX = Math.min(this.x.getValue(), Math.max(0, screenWidth - 120));
+         int textY = Math.min(this.y.getValue(), Math.max(0, screenHeight - 20));
+-        int color = this.textColor.getValue();
++        int color = UiMode.adapt(this.textColor.getValue());
+         int lineHeight = mc.fontRendererObj.FONT_HEIGHT + 3;
+         int row = 0;
++        int widest = 0;
+ 
+         if (this.showCoordinates.getValue()) {
+             String coordinates = String.format("XYZ: %d %d %d",
+                     MathHelper.floor_double(mc.thePlayer.posX),
+                     MathHelper.floor_double(mc.thePlayer.getEntityBoundingBox().minY),
+                     MathHelper.floor_double(mc.thePlayer.posZ));
+-            drawRow(coordinates, textX, textY + row++ * lineHeight, color);
++            widest = Math.max(widest, drawRow(coordinates, textX, textY + row++ * lineHeight, color));
+         }
+         if (this.showFps.getValue()) {
+-            drawRow("FPS: " + Minecraft.getDebugFPS(), textX, textY + row++ * lineHeight, color);
++            widest = Math.max(widest, drawRow("FPS: " + Minecraft.getDebugFPS(), textX, textY + row++ * lineHeight, color));
+         }
+         if (this.showPing.getValue()) {
+             int ping = Ping.own();
+-            drawRow("Ping: " + (ping < 0 ? "--" : ping + " ms"), textX, textY + row++ * lineHeight, color);
++            widest = Math.max(widest, drawRow("Ping: " + (ping < 0 ? "--" : ping + " ms"), textX, textY + row++ * lineHeight, color));
+         }
+         if (this.showCps.getValue()) {
+             long now = System.currentTimeMillis();
+             prune(this.leftClicks, now);
+             prune(this.rightClicks, now);
+-            drawRow("CPS: L " + this.leftClicks.size() + "  R " + this.rightClicks.size(),
+-                    textX, textY + row * lineHeight, color);
++            widest = Math.max(widest, drawRow("CPS: L " + this.leftClicks.size() + "  R " + this.rightClicks.size(),
++                    textX, textY + row++ * lineHeight, color));
+         }
+ 
++        if (row > 0) {
++            HudLayout.report("LegitHUD.info", "LegitHUD", textX - 3, textY - 2, widest + 6,
++                    row * lineHeight + 1, HudLayout.ints(this.x, 1, this.y, 1));
++        }
+         if (this.showKeystrokes.getValue()) {
+             drawKeystrokes(this.keysX.getValue(), this.keysY.getValue(), screenWidth, screenHeight, color);
+         }
+@@ -102,12 +111,13 @@
+         this.rightClicks.clear();
+     }
+ 
+-    private void drawRow(String text, int x, int y, int color) {
++    private int drawRow(String text, int x, int y, int color) {
+         if (this.background.getValue()) {
+             Gui.drawRect(x - 3, y - 2, x + mc.fontRendererObj.getStringWidth(text) + 3,
+-                    y + mc.fontRendererObj.FONT_HEIGHT + 2, 0x70000000);
++                    y + mc.fontRendererObj.FONT_HEIGHT + 2, UiMode.adapt(0x70000000));
+         }
+         mc.fontRendererObj.drawStringWithShadow(text, x, y, color);
++        return mc.fontRendererObj.getStringWidth(text);
+     }
+ 
+     private void drawKeystrokes(int x, int y, int screenWidth, int screenHeight, int color) {
+@@ -115,6 +125,8 @@
+         int gap = 2;
+         int left = Math.min(x, Math.max(0, screenWidth - box * 3 - gap * 2));
+         int top = Math.min(y, Math.max(0, screenHeight - box * 4 - gap * 3));
++        HudLayout.report("LegitHUD.keys", "Keystrokes", left, top, box * 3 + gap * 2, box * 4 + gap * 3,
++                HudLayout.ints(this.keysX, 1, this.keysY, 1));
+         drawKey("W", left + box + gap, top, mc.gameSettings.keyBindForward.isKeyDown(), color);
+         drawKey("A", left, top + box + gap, mc.gameSettings.keyBindLeft.isKeyDown(), color);
+         drawKey("S", left + box + gap, top + box + gap, mc.gameSettings.keyBindBack.isKeyDown(), color);
+@@ -131,11 +143,11 @@
+     }
+ 
+     private void drawKey(String label, int x, int y, boolean down, int color, int width) {
+-        int fill = down ? (color & 0x55FFFFFF) | 0xA0000000 : 0x70000000;
++        int fill = down ? (color & 0x55FFFFFF) | 0xA0000000 : UiMode.adapt(0x70000000);
+         Gui.drawRect(x, y, x + width, y + 20, fill);
+         int labelWidth = mc.fontRendererObj.getStringWidth(label);
+         mc.fontRendererObj.drawStringWithShadow(label, x + (width - labelWidth) / 2,
+-                y + 6, down ? color : 0xFFE0E0E0);
++                y + 6, down ? color : UiMode.adapt(0xFFE0E0E0));
+     }
+ 
+     private static void prune(Deque<Long> clicks, long now) {
+--- a/src/main/java/myau/module/modules/ArmorHUD.java
++++ b/src/main/java/myau/module/modules/ArmorHUD.java
+@@ -1,5 +1,9 @@
+ package myau.module.modules;
+ 
++import myau.ui.UiMode;
++import myau.ui.hud.HudLayout;
++import myau.property.properties.IntProperty;
++
+ import myau.event.EventTarget;
+ import myau.events.Render2DEvent;
+ import myau.module.Module;
+@@ -15,6 +19,9 @@
+ 
+     public final BooleanProperty showDurability = new BooleanProperty("durability", true);
+     public final BooleanProperty background = new BooleanProperty("background", true);
++    /* Added with the HUD editor (2026-10-05): drag it there, or set it here. 0 keeps the original place. */
++    public final IntProperty offsetX = new IntProperty("offset-x", 0, -1000, 1000);
++    public final IntProperty offsetY = new IntProperty("offset-y", 0, -1000, 1000);
+ 
+     public ArmorHUD() {
+         super("ArmorHUD", false, false, "Shows equipped armor and remaining durability.");
+@@ -25,15 +32,25 @@
+         if (!this.isEnabled() || mc.thePlayer == null || mc.theWorld == null) return;
+ 
+         ScaledResolution resolution = new ScaledResolution(mc);
+-        int left = resolution.getScaledWidth() / 2 - 42;
+-        int top = resolution.getScaledHeight() - 54;
++        int left = resolution.getScaledWidth() / 2 - 42 + this.offsetX.getValue();
++        int top = resolution.getScaledHeight() - 54 + this.offsetY.getValue();
++        boolean wearing = false;
++        for (int slot = 0; slot < 4; slot++) {
++            if (mc.thePlayer.inventory.armorItemInSlot(slot) != null) {
++                wearing = true;
++            }
++        }
++        if (wearing || HudLayout.isEditing()) {
++            HudLayout.report("ArmorHUD", "ArmorHUD", left - 2, top - 2, 83, 33,
++                    HudLayout.ints(this.offsetX, 1, this.offsetY, 1));
++        }
+         for (int i = 0; i < 4; i++) {
+             ItemStack stack = mc.thePlayer.inventory.armorItemInSlot(3 - i);
+             if (stack == null) continue;
+ 
+             int x = left + i * 21;
+             if (this.background.getValue()) {
+-                Gui.drawRect(x - 2, top - 2, x + 18, top + 31, 0x70000000);
++                Gui.drawRect(x - 2, top - 2, x + 18, top + 31, UiMode.adapt(0x70000000));
+             }
+             mc.getRenderItem().renderItemAndEffectIntoGUI(stack, x, top);
+             mc.getRenderItem().renderItemOverlayIntoGUI(mc.fontRendererObj, stack, x, top, null);
+@@ -41,7 +58,7 @@
+             if (this.showDurability.getValue() && stack.isItemDamaged()) {
+                 int remaining = Math.max(0, stack.getMaxDamage() - stack.getItemDamage());
+                 int percent = Math.round(remaining * 100.0F / stack.getMaxDamage());
+-                int color = percent <= 20 ? 0xFFFF5555 : (percent <= 50 ? 0xFFFFCC55 : 0xFFE8EDF5);
++                int color = percent <= 20 ? 0xFFFF5555 : (percent <= 50 ? 0xFFFFCC55 : UiMode.adapt(0xFFE8EDF5));
+                 String text = percent + "%";
+                 int textX = x + 8 - mc.fontRendererObj.getStringWidth(text) / 2;
+                 mc.fontRendererObj.drawStringWithShadow(text, textX, top + 19, color);
+--- a/src/main/java/myau/module/modules/EffectsHUD.java
++++ b/src/main/java/myau/module/modules/EffectsHUD.java
+@@ -1,5 +1,8 @@
+ package myau.module.modules;
+ 
++import myau.ui.UiMode;
++import myau.ui.hud.HudLayout;
++
+ import myau.event.EventTarget;
+ import myau.events.Render2DEvent;
+ import myau.module.Module;
+@@ -36,13 +39,22 @@
+         if (!this.isEnabled() || mc.thePlayer == null || mc.theWorld == null) return;
+ 
+         Collection<PotionEffect> active = mc.thePlayer.getActivePotionEffects();
+-        if (active.isEmpty()) return;
++        if (active.isEmpty()) {
++            if (HudLayout.isEditing()) {
++                /* Nothing to show, but still somewhere to put it. */
++                int edge = new ScaledResolution(mc).getScaledWidth() - this.right.getValue();
++                HudLayout.report("EffectsHUD", "EffectsHUD (no effects)", edge - 93, this.y.getValue() - 2, 96,
++                        mc.fontRendererObj.FONT_HEIGHT + 4, HudLayout.ints(this.right, -1, this.y, 1));
++            }
++            return;
++        }
+ 
+         List<PotionEffect> effects = new ArrayList<PotionEffect>(active);
+         effects.sort(Comparator.comparingInt(PotionEffect::getPotionID));
+         ScaledResolution resolution = new ScaledResolution(mc);
+         int rightEdge = resolution.getScaledWidth() - this.right.getValue();
+         int drawY = this.y.getValue();
++        int widest = 0;
+         for (PotionEffect effect : effects) {
+             int id = effect.getPotionID();
+             if (id < 0 || id >= Potion.potionTypes.length || Potion.potionTypes[id] == null) continue;
+@@ -54,14 +66,17 @@
+                     ? AMPLIFIERS[amplifier] : " " + (amplifier + 1);
+             String text = name + level + "  " + StringUtils.ticksToElapsedTime(effect.getDuration());
+             int textWidth = mc.fontRendererObj.getStringWidth(text);
++            widest = Math.max(widest, textWidth);
+             int textX = rightEdge - textWidth;
+             int color = 0xFF000000 | (potion.getLiquidColor() & 0xFFFFFF);
+             if (this.background.getValue()) {
+                 Gui.drawRect(textX - 3, drawY - 2, rightEdge + 3,
+-                        drawY + mc.fontRendererObj.FONT_HEIGHT + 2, 0x70000000);
++                        drawY + mc.fontRendererObj.FONT_HEIGHT + 2, UiMode.adapt(0x70000000));
+             }
+             mc.fontRendererObj.drawStringWithShadow(text, textX, drawY, color);
+             drawY += mc.fontRendererObj.FONT_HEIGHT + 3;
++            HudLayout.report("EffectsHUD", "EffectsHUD", rightEdge - widest - 3, this.y.getValue() - 2, widest + 6,
++                    drawY - this.y.getValue() + 1, HudLayout.ints(this.right, -1, this.y, 1));
+         }
+     }
+ }
+--- a/src/main/java/myau/module/modules/WaterMark2.java
++++ b/src/main/java/myau/module/modules/WaterMark2.java
+@@ -1,5 +1,8 @@
+ package myau.module.modules;
+ 
++import myau.ui.UiMode;
++import myau.ui.hud.HudLayout;
++
+ import myau.Myau;
+ import net.minecraft.client.Minecraft;
+ import myau.event.EventTarget;
+@@ -41,11 +44,13 @@
+         float rectRight = startX + textWidth + (padX);
+         float rectBottom = startY + textHeight + (padY);
+ 
++        HudLayout.report("WaterMark2", "WaterMark2", startX, startY, rectRight - startX, rectBottom - startY,
++                HudLayout.ints(this.rectLeft, 1, this.rectTop, 1));
+         float radius = 4.0f;
+ 
+         HUD hud = (HUD) Myau.moduleManager.modules.get(HUD.class);
+ 
+-        int fillColor = 0x80000000;
++        int fillColor = UiMode.adapt(0x80000000);
+         int hudColor = hud.getColor(System.currentTimeMillis()).getRGB();
+ 
+         RenderUtil.drawRoundedGradientOutlinedRectangle(
+--- a/src/main/java/myau/module/modules/FPScounter.java
++++ b/src/main/java/myau/module/modules/FPScounter.java
+@@ -8,6 +8,8 @@
+  */
+ package myau.module.modules;
+ 
++import myau.ui.hud.HudLayout;
++
+ import java.awt.Color;
+ import myau.event.EventTarget;
+ import myau.events.Render2DEvent;
+@@ -83,6 +85,8 @@
+         int textHeight = mc.fontRendererObj.FONT_HEIGHT;
+         float w = textWidth + 12;
+         float h = textHeight + 6;
++        HudLayout.report("FPScounter", "FPS counter", baseX - w * scaleFactor / 2.0f, baseY - h * scaleFactor / 2.0f,
++                w * scaleFactor, h * scaleFactor, HudLayout.ints(this.offsetX, 1, this.offsetY, 1));
+         float radius = ((Integer)this.cornerRadius.getValue()).intValue();
+         GlStateManager.pushMatrix();
+         GlStateManager.scale(scaleFactor, scaleFactor, 1.0f);
+--- a/src/main/java/myau/module/modules/Hotbar.java
++++ b/src/main/java/myau/module/modules/Hotbar.java
+@@ -1,5 +1,9 @@
+ package myau.module.modules;
+ 
++import myau.ui.UiMode;
++import myau.ui.hud.HudLayout;
++import myau.property.properties.IntProperty;
++
+ import myau.event.EventTarget;
+ import myau.events.Render2DEvent;
+ import myau.module.Module;
+@@ -20,6 +24,9 @@
+ 
+     private AnimationUtil animationUtil;
+     private int lastSlot = -1;
++    /* Added with the HUD editor (2026-10-05): drag it there, or set it here. 0 keeps the original place. */
++    public final IntProperty offsetX = new IntProperty("offset-x", 0, -1000, 1000);
++    public final IntProperty offsetY = new IntProperty("offset-y", 0, -1000, 1000);
+ 
+     public Hotbar() {
+         super("Hotbar", true, false, "Custom Hotbar rendering");
+@@ -42,8 +49,10 @@
+ 
+         float width = 182;
+         float height = 22;
+-        float startX = middleX - width / 2.0f;
+-        float startY = bottomY - height - 2;
++        float startX = middleX - width / 2.0f + this.offsetX.getValue();
++        float startY = bottomY - height - 2 + this.offsetY.getValue();
++        HudLayout.report("Hotbar", "Hotbar", startX, startY, width, height,
++                HudLayout.ints(this.offsetX, 1, this.offsetY, 1));
+         
+         // Draw Glassmorphic Background
+         if (RenderFixes.shouldUseShaders()) {
+@@ -52,7 +61,7 @@
+             BlurUtils.blurEnd(2, 4.0F);
+         }
+ 
+-        Color backgroundColor = new Color(15, 15, 15, 100);
++        Color backgroundColor = UiMode.adapt(new Color(15, 15, 15, 100));
+         ThemeStyle widget = ThemeStyle.active(WidgetColors.class);
+         if (widget != null) {
+             backgroundColor = widget.fill(backgroundColor, null, 0);
+@@ -78,7 +87,7 @@
+         float highlightX = (float) animationUtil.getValue();
+ 
+         // Draw Selection Highlight
+-        Color highlightColor = new Color(255, 255, 255, 60);
++        Color highlightColor = UiMode.adapt(new Color(255, 255, 255, 60));
+         if (widget != null) {
+             /* The selection in the theme colour, a little stronger than the bar under it. */
+             Color themed = widget.color(highlightColor, null, currentItem);
+--- a/src/main/java/myau/module/modules/DynamicIsland.java
++++ b/src/main/java/myau/module/modules/DynamicIsland.java
+@@ -1,5 +1,9 @@
+ package myau.module.modules;
+ 
++import myau.ui.UiMode;
++import myau.ui.hud.HudLayout;
++import myau.property.properties.IntProperty;
++
+ import java.awt.Color;
+ import myau.event.EventTarget;
+ import myau.events.Render2DEvent;
+@@ -24,6 +28,9 @@
+     public final ColorProperty textColor = new ColorProperty("AccentColor", new Color(255, 30, 0).getRGB());
+     public final BooleanProperty textShadow = new BooleanProperty("TextShadow", true);
+     public final BooleanProperty enableGlow = new BooleanProperty("Glow", true);
++    /* Added with the HUD editor (2026-10-05): drag it there, or set it here. 0 keeps the original place. */
++    public final IntProperty offsetX = new IntProperty("offset-x", 0, -1000, 1000);
++    public final IntProperty offsetY = new IntProperty("offset-y", 0, -1000, 1000);
+ 
+     private final int bgAlpha = 130;
+     private final float radius = 8f;
+@@ -55,8 +62,10 @@
+         float width = (fr != null ? fr.getStringWidth(text) : mc.fontRendererObj.getStringWidth(text)) + 24f;
+         float height = 26f;
+ 
+-        float x = sr.getScaledWidth() / 2f - width / 2f;
+-        float y = 8f;
++        float x = sr.getScaledWidth() / 2f - width / 2f + this.offsetX.getValue();
++        float y = 8f + this.offsetY.getValue();
++        HudLayout.report("DynamicIsland", "DynamicIsland", x, y, width, height,
++                HudLayout.ints(this.offsetX, 1, this.offsetY, 1));
+ 
+         // Glassmorphism Blur Pass
+         myau.util.shader.BlurUtils.prepareBlur();
+@@ -74,7 +83,7 @@
+             fr.drawString("Myau+", startX, textY, accentRGB);
+             String part1 = "  ·  " + username + "  ·  ";
+             float part1Width = fr.getStringWidth("Myau+");
+-            fr.drawString(part1, startX + part1Width, textY, 0xFFFFFF);
++            fr.drawString(part1, startX + part1Width, textY, UiMode.adapt(0xFFFFFF));
+ 
+             String part2 = ping + "ms";
+             float part2Width = fr.getStringWidth("Myau+" + part1);
+@@ -82,12 +91,12 @@
+ 
+             String rest = " to " + server + "  ·  " + fps + "fps";
+             float restWidth = fr.getStringWidth("Myau+" + part1 + part2);
+-            fr.drawString(rest, startX + restWidth, textY, 0xFFFFFF);
++            fr.drawString(rest, startX + restWidth, textY, UiMode.adapt(0xFFFFFF));
+         } else {
+             mc.fontRendererObj.drawStringWithShadow("Myau+", (int) startX, (int) textY, accentRGB);
+             String part1 = "  ·  " + username + "  ·  ";
+             float part1Width = mc.fontRendererObj.getStringWidth("Myau+");
+-            mc.fontRendererObj.drawStringWithShadow(part1, (int) (startX + part1Width), (int) textY, 0xFFFFFF);
++            mc.fontRendererObj.drawStringWithShadow(part1, (int) (startX + part1Width), (int) textY, UiMode.adapt(0xFFFFFF));
+ 
+             String part2 = ping + "ms";
+             float part2Width = mc.fontRendererObj.getStringWidth("Myau+" + part1);
+@@ -95,7 +104,7 @@
+ 
+             String rest = " to " + server + "  ·  " + fps + "fps";
+             float restWidth = mc.fontRendererObj.getStringWidth("Myau+" + part1 + part2);
+-            mc.fontRendererObj.drawStringWithShadow(rest, (int) (startX + restWidth), (int) textY, 0xFFFFFF);
++            mc.fontRendererObj.drawStringWithShadow(rest, (int) (startX + restWidth), (int) textY, UiMode.adapt(0xFFFFFF));
+         }
+     }
+ 
+@@ -138,13 +147,13 @@
+                 x, y,
+                 w, h,
+                 this.radius,
+-                new Color(0, 0, 0, this.bgAlpha).getRGB());
++                UiMode.adapt(new Color(0, 0, 0, this.bgAlpha).getRGB()));
+ 
+         RoundedUtils.drawRoundedRect(
+                 x + 0.5f, y + 0.5f,
+                 w - 1f, h - 1f,
+                 this.radius - 0.5f,
+-                new Color(255, 255, 255, 18).getRGB());
++                UiMode.adapt(new Color(255, 255, 255, 18).getRGB()));
+ 
+         RenderUtil.disableRenderState();
+     }
+--- a/src/main/java/myau/module/modules/Statistics.java
++++ b/src/main/java/myau/module/modules/Statistics.java
+@@ -1,5 +1,8 @@
+ package myau.module.modules;
+ 
++import myau.ui.UiMode;
++import myau.ui.hud.HudLayout;
++
+ import java.awt.Color;
+ import java.util.Arrays;
+ import java.util.concurrent.TimeUnit;
+@@ -89,6 +92,7 @@
+ 
+         this.dragging.scale.x = width;
+         this.dragging.scale.y = height;
++        HudLayout.report("Statistics", "Session stats", x, y, width, height, HudLayout.drag(this.dragging));
+ 
+         HUD hud = (HUD) Myau.moduleManager.modules.get(HUD.class);
+         boolean shaders = hud != null && hud.shaders.getValue();
+@@ -100,7 +104,7 @@
+         }
+ 
+         Color c1 = applyOpacity(getAccentColor(), 0.8f);
+-        RoundedUtils.drawRoundOutline(x, y, width, height, 6, 1.0f, new Color(0, 0, 0, 100), c1);
++        RoundedUtils.drawRoundOutline(x, y, width, height, 6, 1.0f, UiMode.adapt(new Color(0, 0, 0, 100)), c1);
+ 
+         CFontRenderer font18 = FontProcess.getFont("sans");
+ 
+@@ -119,18 +123,18 @@
+                 timeString,
+                 x + width / 2F - font18.getStringWidth(timeString) / 2F,
+                 (float) (y + padding + 19),
+-                new Color(255, 255, 255, 200).getRGB());
++                UiMode.adapt(new Color(255, 255, 255, 200).getRGB()));
+ 
+         // Kills & Wins
+         String killsText = "kills " + killCount;
+         String winsText = "wins " + wins;
+         font18.drawString(
+-                killsText, x + 25, (float) (y + padding + 32), new Color(255, 255, 255, 200).getRGB());
++                killsText, x + 25, (float) (y + padding + 32), UiMode.adapt(new Color(255, 255, 255, 200).getRGB()));
+         font18.drawString(
+                 winsText,
+                 x + width - 25 - font18.getStringWidth(winsText),
+                 (float) (y + padding + 32),
+-                new Color(255, 255, 255, 200).getRGB());
++                UiMode.adapt(new Color(255, 255, 255, 200).getRGB()));
+     }
+ 
+     private Color applyOpacity(Color color, float alpha) {
+--- a/src/main/java/myau/module/modules/HUD.java
++++ b/src/main/java/myau/module/modules/HUD.java
+@@ -1,5 +1,8 @@
+ package myau.module.modules;
+ 
++import myau.ui.UiMode;
++import myau.ui.hud.HudLayout;
++
+ import myau.Myau;
+ import myau.enums.BlinkModules;
+ import myau.enums.ChatColors;
+@@ -359,6 +362,29 @@
+                 || (this.hideMisc.getValue() && MISC_MODULES.contains(moduleClass));
+     }
+ 
++    /** Tells the HUD editor where the module list is: the same geometry the list is drawn with. */
++    private void reportListBounds(float x, float y, float height) {
++        int count = this.activeModules.size();
++        if (count == 0) {
++            return;
++        }
++        float s = this.scale.getValue();
++        float pad = this.padding.getValue();
++        float widest = 0.0F;
++        for (Module module : this.activeModules) {
++            widest = Math.max(widest, this.getModuleRenderWidth(module));
++        }
++        float step = (height + (this.shadow.getValue() ? 1.0F : 0.0F) + pad * 2.0F) * s;
++        boolean right = this.posX.getValue() == 1;
++        boolean bottom = this.posY.getValue() == 1;
++        float left = right ? x - (1.0F + pad + widest) * s : x - (1.0F + pad) * s;
++        float width = (widest + 2.0F + pad * 2.0F) * s;
++        float top = bottom ? y - (count - 1) * step - (pad + 1.0F) * s : y - (pad + 1.0F) * s;
++        float total = (count - 1) * step + (height + pad * 2.0F + 2.0F) * s;
++        HudLayout.report("HUD.list", "Module list", left, top, width, total,
++                HudLayout.ints(this.offsetX, right ? -1 : 1, this.offsetY, bottom ? -1 : 1));
++    }
++
+     private boolean hasSidebar() {
+         return this.showBar.getValue() && this.sidebarMode.getValue() != 4;
+     }
+@@ -484,6 +510,7 @@
+                 y = (float) new ScaledResolution(mc).getScaledHeight() - y - height * this.scale.getValue();
+             }
+             GlStateManager.pushMatrix();
++            reportListBounds(x, y, height);
+             GlStateManager.scale(this.scale.getValue(), this.scale.getValue(), 0.0F);
+ 
+             long l = System.currentTimeMillis();
+@@ -568,7 +595,7 @@
+                 RenderUtil.enableRenderState();
+                 if (this.background.getValue() > 0) {
+                     int alpha = (int) (255 * (this.background.getValue().floatValue() / 100.0F));
+-                    int bgColor = new Color(15, 15, 15, alpha).getRGB(); // Glassmorphic dark background
++                    int bgColor = UiMode.adapt(new Color(15, 15, 15, alpha).getRGB()); // Glassmorphic dark background
+                     if (this.rounded.getValue()) {
+                         float bgW = bgX2 - bgX1;
+                         float bgH = bgY2 - bgY1;
+@@ -591,7 +618,7 @@
+                 
+                 // Draw a subtle white edge for glassmorphism instead of a colored sidebar
+                 if (this.showBar.getValue()) {
+-                    int edgeColor = new Color(255, 255, 255, 40).getRGB();
++                    int edgeColor = UiMode.adapt(new Color(255, 255, 255, 40).getRGB());
+                     if (this.posX.getValue() == 0) { // Right side
+                         RenderUtil.drawRect(bgX2 - 1.0F, bgY1, bgX2, bgY2, edgeColor);
+                     } else { // Left side
+--- a/src/main/java/myau/module/modules/WaterMark.java
++++ b/src/main/java/myau/module/modules/WaterMark.java
+@@ -1,5 +1,9 @@
+ package myau.module.modules;
+ 
++import myau.ui.UiMode;
++import myau.ui.hud.HudLayout;
++import myau.property.properties.IntProperty;
++
+ import myau.Myau;
+ import myau.event.EventTarget;
+ import myau.events.Render2DEvent;
+@@ -35,6 +39,9 @@
+     public final TextProperty modernText = new TextProperty("Text", "OpenMyau+", () -> mode.getValue() == 1);
+     public final BooleanProperty shadow = new BooleanProperty("Shadow", true, () -> mode.getValue() == 1);
+     public final BooleanProperty enableGlow = new BooleanProperty("Glow", true);
++    /* Added with the HUD editor (2026-10-05): drag it there, or set it here. 0 keeps the original place. */
++    public final IntProperty offsetX = new IntProperty("offset-x", 0, -1000, 1000);
++    public final IntProperty offsetY = new IntProperty("offset-y", 0, -1000, 1000);
+ 
+     // "VAPE V4" image watermark. The two PNGs live in
+     // assets/myau/assets/ and are drawn side-by-side to read as "VAPE V4".
+@@ -103,6 +110,15 @@
+         if (!this.isEnabled())
+             return;
+ 
++        float[] area = watermarkArea();
++        if (area != null) {
++            HudLayout.report("WaterMark", "WaterMark", area[0] + this.offsetX.getValue(),
++                    area[1] + this.offsetY.getValue(), area[2], area[3],
++                    HudLayout.ints(this.offsetX, 1, this.offsetY, 1));
++        }
++        GlStateManager.pushMatrix();
++        GlStateManager.translate((float) this.offsetX.getValue(), (float) this.offsetY.getValue(), 0.0F);
++        try {
+         switch (mode.getValue()) {
+             case 0:
+                 renderExhibition();
+@@ -117,6 +133,47 @@
+                 renderVape(4.0f, 4.0f);
+                 break;
+         }
++        } finally {
++            GlStateManager.popMatrix();
++        }
++    }
++
++    /** Where the current style draws, before the offset: {x, y, width, height}; null if not known yet. */
++    private float[] watermarkArea() {
++        switch (mode.getValue()) {
++            case 0: {
++                float top = getCustomFont() != null ? 3.0f : 2.0f;
++                String sample = "OpenMyau+ [" + Minecraft.getDebugFPS() + "FPS] [000ms]";
++                return new float[]{2.0f, top, getStringWidth(sample), 10.0f};
++            }
++            case 1: {
++                FontRenderer fr = FontManager.nunitoBold48;
++                String text = modernText.getValue();
++                float width = fr != null ? (float) fr.getStringWidth(text) : mc.fontRendererObj.getStringWidth(text);
++                float height = fr != null ? (float) fr.getHeight() : mc.fontRendererObj.FONT_HEIGHT;
++                return new float[]{4.0f, 4.0f, width, height};
++            }
++            case 2:
++                return new float[]{4.0f, 4.0f, mc.fontRendererObj.getStringWidth("weedhack premium beta") + 12.0f, 20.0f};
++            case 3: {
++                float width = 0.0f;
++                if (vapeTexture != null && vapeHeight > 0) {
++                    width += vapeWidth * 18.0f / vapeHeight;
++                }
++                if (v4Texture != null && v4Height > 0) {
++                    width += 0.1f + v4Width * 18.0f / v4Height;
++                }
++                return width > 0.0f ? new float[]{4.0f, 4.0f, width, 18.0f} : null;
++            }
++            default:
++                return null;
++        }
++    }
++
++    /** A grey (this file's Color is LWJGL's), swapped to its light-mode counterpart when light mode is on. */
++    private static Color neutral(int r, int g, int b) {
++        int argb = UiMode.adapt(0xFF000000 | (r << 16) | (g << 8) | b);
++        return new Color((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF);
+     }
+ 
+     private void loadVapeImages() {
+@@ -228,7 +285,7 @@
+         for (int i = 0; i < characters.length; i++) {
+             String charStr = String.valueOf(characters[i]);
+ 
+-            int color = 0xFFFFFFFF;
++            int color = UiMode.adapt(0xFFFFFFFF);
+             if (hud != null) {
+                 long offset = (long) (i * hud.colorDistance.getValue());
+                 color = hud.getColor(time, offset).getRGB();
+@@ -283,11 +340,11 @@
+         drawStringWithShadow(exhibitionText, x, y, rainbowColor);
+         float currentX = x + getStringWidth(exhibitionText);
+ 
+-        int whiteColor = 0xFFFFFFFF;
++        int whiteColor = UiMode.adapt(0xFFFFFFFF);
+         drawStringWithShadow(restText, currentX, y, whiteColor);
+         currentX += getStringWidth(restText);
+ 
+-        int grayColor = 0xFFAAAAAA;
++        int grayColor = UiMode.adapt(0xFFAAAAAA);
+         drawStringWithShadow("[", currentX, y, grayColor);
+         currentX += getStringWidth("[");
+ 
+@@ -318,14 +375,14 @@
+         float boxWidth = textWidth + 4;
+         float boxHeight = 12;
+ 
+-        RenderUtils.drawRect(x, y, boxWidth + 8, boxHeight + 8, new Color(60, 60, 60));
+-        RenderUtils.drawRect(x + 1, y + 1, boxWidth + 6, boxHeight + 6, new Color(40, 40, 40));
+-        RenderUtils.drawRect(x + 2, y + 2, boxWidth + 4, boxHeight + 4, new Color(60, 60, 60));
+-        RenderUtils.drawRect(x + 3, y + 3, boxWidth + 2, boxHeight + 2, new Color(22, 22, 22));
++        RenderUtils.drawRect(x, y, boxWidth + 8, boxHeight + 8, neutral(60, 60, 60));
++        RenderUtils.drawRect(x + 1, y + 1, boxWidth + 6, boxHeight + 6, neutral(40, 40, 40));
++        RenderUtils.drawRect(x + 2, y + 2, boxWidth + 4, boxHeight + 4, neutral(60, 60, 60));
++        RenderUtils.drawRect(x + 3, y + 3, boxWidth + 2, boxHeight + 2, neutral(22, 22, 22));
+ 
+         float textY = mc.fontRendererObj.FONT_HEIGHT > 12 ? y + (boxHeight - 12) / 2f + 1
+                 : y + (boxHeight - mc.fontRendererObj.FONT_HEIGHT) / 2f + 3;
+-        mc.fontRendererObj.drawStringWithShadow(text, x + 5, textY, 0xFFFFFFFF);
++        mc.fontRendererObj.drawStringWithShadow(text, x + 5, textY, UiMode.adapt(0xFFFFFFFF));
+ 
+         float gradient = boxWidth + 2;
+         for (int i = 0; i < gradient; i++) {
