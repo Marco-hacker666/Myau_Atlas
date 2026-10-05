@@ -1,5 +1,8 @@
 package myau.module.modules;
 
+import myau.ui.UiMode;
+import myau.ui.hud.HudLayout;
+
 import myau.Myau;
 import myau.enums.BlinkModules;
 import myau.enums.ChatColors;
@@ -359,6 +362,29 @@ public class HUD extends Module {
                 || (this.hideMisc.getValue() && MISC_MODULES.contains(moduleClass));
     }
 
+    /** Tells the HUD editor where the module list is: the same geometry the list is drawn with. */
+    private void reportListBounds(float x, float y, float height) {
+        int count = this.activeModules.size();
+        if (count == 0) {
+            return;
+        }
+        float s = this.scale.getValue();
+        float pad = this.padding.getValue();
+        float widest = 0.0F;
+        for (Module module : this.activeModules) {
+            widest = Math.max(widest, this.getModuleRenderWidth(module));
+        }
+        float step = (height + (this.shadow.getValue() ? 1.0F : 0.0F) + pad * 2.0F) * s;
+        boolean right = this.posX.getValue() == 1;
+        boolean bottom = this.posY.getValue() == 1;
+        float left = right ? x - (1.0F + pad + widest) * s : x - (1.0F + pad) * s;
+        float width = (widest + 2.0F + pad * 2.0F) * s;
+        float top = bottom ? y - (count - 1) * step - (pad + 1.0F) * s : y - (pad + 1.0F) * s;
+        float total = (count - 1) * step + (height + pad * 2.0F + 2.0F) * s;
+        HudLayout.report("HUD.list", "Module list", left, top, width, total,
+                HudLayout.ints(this.offsetX, right ? -1 : 1, this.offsetY, bottom ? -1 : 1));
+    }
+
     private boolean hasSidebar() {
         return this.showBar.getValue() && this.sidebarMode.getValue() != 4;
     }
@@ -484,6 +510,7 @@ public class HUD extends Module {
                 y = (float) new ScaledResolution(mc).getScaledHeight() - y - height * this.scale.getValue();
             }
             GlStateManager.pushMatrix();
+            reportListBounds(x, y, height);
             GlStateManager.scale(this.scale.getValue(), this.scale.getValue(), 0.0F);
 
             long l = System.currentTimeMillis();
@@ -568,7 +595,7 @@ public class HUD extends Module {
                 RenderUtil.enableRenderState();
                 if (this.background.getValue() > 0) {
                     int alpha = (int) (255 * (this.background.getValue().floatValue() / 100.0F));
-                    int bgColor = new Color(15, 15, 15, alpha).getRGB(); // Glassmorphic dark background
+                    int bgColor = UiMode.adapt(new Color(15, 15, 15, alpha).getRGB()); // Glassmorphic dark background
                     if (this.rounded.getValue()) {
                         float bgW = bgX2 - bgX1;
                         float bgH = bgY2 - bgY1;
@@ -591,7 +618,7 @@ public class HUD extends Module {
                 
                 // Draw a subtle white edge for glassmorphism instead of a colored sidebar
                 if (this.showBar.getValue()) {
-                    int edgeColor = new Color(255, 255, 255, 40).getRGB();
+                    int edgeColor = UiMode.adapt(new Color(255, 255, 255, 40).getRGB());
                     if (this.posX.getValue() == 0) { // Right side
                         RenderUtil.drawRect(bgX2 - 1.0F, bgY1, bgX2, bgY2, edgeColor);
                     } else { // Left side

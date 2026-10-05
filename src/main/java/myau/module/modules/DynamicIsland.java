@@ -1,5 +1,9 @@
 package myau.module.modules;
 
+import myau.ui.UiMode;
+import myau.ui.hud.HudLayout;
+import myau.property.properties.IntProperty;
+
 import java.awt.Color;
 import myau.event.EventTarget;
 import myau.events.Render2DEvent;
@@ -24,6 +28,9 @@ public class DynamicIsland extends Module { // nah bro i took 2 hour just to did
     public final ColorProperty textColor = new ColorProperty("AccentColor", new Color(255, 30, 0).getRGB());
     public final BooleanProperty textShadow = new BooleanProperty("TextShadow", true);
     public final BooleanProperty enableGlow = new BooleanProperty("Glow", true);
+    /* Added with the HUD editor (2026-10-05): drag it there, or set it here. 0 keeps the original place. */
+    public final IntProperty offsetX = new IntProperty("offset-x", 0, -1000, 1000);
+    public final IntProperty offsetY = new IntProperty("offset-y", 0, -1000, 1000);
 
     private final int bgAlpha = 130;
     private final float radius = 8f;
@@ -55,8 +62,10 @@ public class DynamicIsland extends Module { // nah bro i took 2 hour just to did
         float width = (fr != null ? fr.getStringWidth(text) : mc.fontRendererObj.getStringWidth(text)) + 24f;
         float height = 26f;
 
-        float x = sr.getScaledWidth() / 2f - width / 2f;
-        float y = 8f;
+        float x = sr.getScaledWidth() / 2f - width / 2f + this.offsetX.getValue();
+        float y = 8f + this.offsetY.getValue();
+        HudLayout.report("DynamicIsland", "DynamicIsland", x, y, width, height,
+                HudLayout.ints(this.offsetX, 1, this.offsetY, 1));
 
         // Glassmorphism Blur Pass
         myau.util.shader.BlurUtils.prepareBlur();
@@ -74,7 +83,7 @@ public class DynamicIsland extends Module { // nah bro i took 2 hour just to did
             fr.drawString("Myau+", startX, textY, accentRGB);
             String part1 = "  ·  " + username + "  ·  ";
             float part1Width = fr.getStringWidth("Myau+");
-            fr.drawString(part1, startX + part1Width, textY, 0xFFFFFF);
+            fr.drawString(part1, startX + part1Width, textY, UiMode.adapt(0xFFFFFF));
 
             String part2 = ping + "ms";
             float part2Width = fr.getStringWidth("Myau+" + part1);
@@ -82,12 +91,12 @@ public class DynamicIsland extends Module { // nah bro i took 2 hour just to did
 
             String rest = " to " + server + "  ·  " + fps + "fps";
             float restWidth = fr.getStringWidth("Myau+" + part1 + part2);
-            fr.drawString(rest, startX + restWidth, textY, 0xFFFFFF);
+            fr.drawString(rest, startX + restWidth, textY, UiMode.adapt(0xFFFFFF));
         } else {
             mc.fontRendererObj.drawStringWithShadow("Myau+", (int) startX, (int) textY, accentRGB);
             String part1 = "  ·  " + username + "  ·  ";
             float part1Width = mc.fontRendererObj.getStringWidth("Myau+");
-            mc.fontRendererObj.drawStringWithShadow(part1, (int) (startX + part1Width), (int) textY, 0xFFFFFF);
+            mc.fontRendererObj.drawStringWithShadow(part1, (int) (startX + part1Width), (int) textY, UiMode.adapt(0xFFFFFF));
 
             String part2 = ping + "ms";
             float part2Width = mc.fontRendererObj.getStringWidth("Myau+" + part1);
@@ -95,7 +104,7 @@ public class DynamicIsland extends Module { // nah bro i took 2 hour just to did
 
             String rest = " to " + server + "  ·  " + fps + "fps";
             float restWidth = mc.fontRendererObj.getStringWidth("Myau+" + part1 + part2);
-            mc.fontRendererObj.drawStringWithShadow(rest, (int) (startX + restWidth), (int) textY, 0xFFFFFF);
+            mc.fontRendererObj.drawStringWithShadow(rest, (int) (startX + restWidth), (int) textY, UiMode.adapt(0xFFFFFF));
         }
     }
 
@@ -138,13 +147,13 @@ public class DynamicIsland extends Module { // nah bro i took 2 hour just to did
                 x, y,
                 w, h,
                 this.radius,
-                new Color(0, 0, 0, this.bgAlpha).getRGB());
+                UiMode.adapt(new Color(0, 0, 0, this.bgAlpha).getRGB()));
 
         RoundedUtils.drawRoundedRect(
                 x + 0.5f, y + 0.5f,
                 w - 1f, h - 1f,
                 this.radius - 0.5f,
-                new Color(255, 255, 255, 18).getRGB());
+                UiMode.adapt(new Color(255, 255, 255, 18).getRGB()));
 
         RenderUtil.disableRenderState();
     }

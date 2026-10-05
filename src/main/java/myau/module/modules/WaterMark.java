@@ -1,5 +1,9 @@
 package myau.module.modules;
 
+import myau.ui.UiMode;
+import myau.ui.hud.HudLayout;
+import myau.property.properties.IntProperty;
+
 import myau.Myau;
 import myau.event.EventTarget;
 import myau.events.Render2DEvent;
@@ -35,6 +39,9 @@ public class WaterMark extends Module {
     public final TextProperty modernText = new TextProperty("Text", "OpenMyau+", () -> mode.getValue() == 1);
     public final BooleanProperty shadow = new BooleanProperty("Shadow", true, () -> mode.getValue() == 1);
     public final BooleanProperty enableGlow = new BooleanProperty("Glow", true);
+    /* Added with the HUD editor (2026-10-05): drag it there, or set it here. 0 keeps the original place. */
+    public final IntProperty offsetX = new IntProperty("offset-x", 0, -1000, 1000);
+    public final IntProperty offsetY = new IntProperty("offset-y", 0, -1000, 1000);
 
     // "VAPE V4" image watermark. The two PNGs live in
     // assets/myau/assets/ and are drawn side-by-side to read as "VAPE V4".
@@ -103,6 +110,15 @@ public class WaterMark extends Module {
         if (!this.isEnabled())
             return;
 
+        float[] area = watermarkArea();
+        if (area != null) {
+            HudLayout.report("WaterMark", "WaterMark", area[0] + this.offsetX.getValue(),
+                    area[1] + this.offsetY.getValue(), area[2], area[3],
+                    HudLayout.ints(this.offsetX, 1, this.offsetY, 1));
+        }
+        GlStateManager.pushMatrix();
+        GlStateManager.translate((float) this.offsetX.getValue(), (float) this.offsetY.getValue(), 0.0F);
+        try {
         switch (mode.getValue()) {
             case 0:
                 renderExhibition();
@@ -117,6 +133,47 @@ public class WaterMark extends Module {
                 renderVape(4.0f, 4.0f);
                 break;
         }
+        } finally {
+            GlStateManager.popMatrix();
+        }
+    }
+
+    /** Where the current style draws, before the offset: {x, y, width, height}; null if not known yet. */
+    private float[] watermarkArea() {
+        switch (mode.getValue()) {
+            case 0: {
+                float top = getCustomFont() != null ? 3.0f : 2.0f;
+                String sample = "OpenMyau+ [" + Minecraft.getDebugFPS() + "FPS] [000ms]";
+                return new float[]{2.0f, top, getStringWidth(sample), 10.0f};
+            }
+            case 1: {
+                FontRenderer fr = FontManager.nunitoBold48;
+                String text = modernText.getValue();
+                float width = fr != null ? (float) fr.getStringWidth(text) : mc.fontRendererObj.getStringWidth(text);
+                float height = fr != null ? (float) fr.getHeight() : mc.fontRendererObj.FONT_HEIGHT;
+                return new float[]{4.0f, 4.0f, width, height};
+            }
+            case 2:
+                return new float[]{4.0f, 4.0f, mc.fontRendererObj.getStringWidth("weedhack premium beta") + 12.0f, 20.0f};
+            case 3: {
+                float width = 0.0f;
+                if (vapeTexture != null && vapeHeight > 0) {
+                    width += vapeWidth * 18.0f / vapeHeight;
+                }
+                if (v4Texture != null && v4Height > 0) {
+                    width += 0.1f + v4Width * 18.0f / v4Height;
+                }
+                return width > 0.0f ? new float[]{4.0f, 4.0f, width, 18.0f} : null;
+            }
+            default:
+                return null;
+        }
+    }
+
+    /** A grey (this file's Color is LWJGL's), swapped to its light-mode counterpart when light mode is on. */
+    private static Color neutral(int r, int g, int b) {
+        int argb = UiMode.adapt(0xFF000000 | (r << 16) | (g << 8) | b);
+        return new Color((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF);
     }
 
     private void loadVapeImages() {
@@ -228,7 +285,7 @@ public class WaterMark extends Module {
         for (int i = 0; i < characters.length; i++) {
             String charStr = String.valueOf(characters[i]);
 
-            int color = 0xFFFFFFFF;
+            int color = UiMode.adapt(0xFFFFFFFF);
             if (hud != null) {
                 long offset = (long) (i * hud.colorDistance.getValue());
                 color = hud.getColor(time, offset).getRGB();
@@ -283,11 +340,11 @@ public class WaterMark extends Module {
         drawStringWithShadow(exhibitionText, x, y, rainbowColor);
         float currentX = x + getStringWidth(exhibitionText);
 
-        int whiteColor = 0xFFFFFFFF;
+        int whiteColor = UiMode.adapt(0xFFFFFFFF);
         drawStringWithShadow(restText, currentX, y, whiteColor);
         currentX += getStringWidth(restText);
 
-        int grayColor = 0xFFAAAAAA;
+        int grayColor = UiMode.adapt(0xFFAAAAAA);
         drawStringWithShadow("[", currentX, y, grayColor);
         currentX += getStringWidth("[");
 
@@ -318,14 +375,14 @@ public class WaterMark extends Module {
         float boxWidth = textWidth + 4;
         float boxHeight = 12;
 
-        RenderUtils.drawRect(x, y, boxWidth + 8, boxHeight + 8, new Color(60, 60, 60));
-        RenderUtils.drawRect(x + 1, y + 1, boxWidth + 6, boxHeight + 6, new Color(40, 40, 40));
-        RenderUtils.drawRect(x + 2, y + 2, boxWidth + 4, boxHeight + 4, new Color(60, 60, 60));
-        RenderUtils.drawRect(x + 3, y + 3, boxWidth + 2, boxHeight + 2, new Color(22, 22, 22));
+        RenderUtils.drawRect(x, y, boxWidth + 8, boxHeight + 8, neutral(60, 60, 60));
+        RenderUtils.drawRect(x + 1, y + 1, boxWidth + 6, boxHeight + 6, neutral(40, 40, 40));
+        RenderUtils.drawRect(x + 2, y + 2, boxWidth + 4, boxHeight + 4, neutral(60, 60, 60));
+        RenderUtils.drawRect(x + 3, y + 3, boxWidth + 2, boxHeight + 2, neutral(22, 22, 22));
 
         float textY = mc.fontRendererObj.FONT_HEIGHT > 12 ? y + (boxHeight - 12) / 2f + 1
                 : y + (boxHeight - mc.fontRendererObj.FONT_HEIGHT) / 2f + 3;
-        mc.fontRendererObj.drawStringWithShadow(text, x + 5, textY, 0xFFFFFFFF);
+        mc.fontRendererObj.drawStringWithShadow(text, x + 5, textY, UiMode.adapt(0xFFFFFFFF));
 
         float gradient = boxWidth + 2;
         for (int i = 0; i < gradient; i++) {

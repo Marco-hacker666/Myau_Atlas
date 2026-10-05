@@ -80,7 +80,7 @@ public class AtlasClickGui extends GuiScreen {
     private static AtlasClickGui instance;
 
     // Layout, in scaled pixels.
-    private static final int HEADER = 68;
+    private static final int HEADER = 42;
     /* Set from the theme at the start of every frame: the density, the
        corner radius and whether the hint bar has a strip of its own. */
     private int FOOTER = 20;
@@ -102,10 +102,15 @@ public class AtlasClickGui extends GuiScreen {
     /* Text is opaque and bright; every surface behind it is glass. Text over a
        translucent panel has to be brighter than text over a solid one -- the
        background shows through and eats contrast. */
-    private static final int TEXT = 0xFFF5F8FF;
-    private static final int DIM = 0xD1C3CEDF;
-    private static final int FAINT = 0x9E93A3BA;
+    /* Dark-mode values. Repainted at the start of every frame by paintPalette(),
+       so light mode swaps them for dark text without touching any call site. */
+    private static int TEXT = 0xFFF5F8FF;
+    private static int DIM = 0xD1C3CEDF;
+    private static int FAINT = 0x9E93A3BA;
     private static final int WHITE = 0xFFFFFFFF;
+    /* The neutral every hover wash, divider and rim is mixed from: white over
+       dark glass, ink over light glass. See ink(). */
+    private static int INK = 0xFFFFFFFF;
 
     /** How the menu looks; edited on the Appearance page, kept in atlas-theme.json. */
     private final AtlasTheme theme = new AtlasTheme();
@@ -119,6 +124,8 @@ public class AtlasClickGui extends GuiScreen {
 
     private final List<String> categories = new ArrayList<String>();
     private final Map<String, List<Module>> byCategory = new LinkedHashMap<String, List<Module>>();
+    /** The Legit page's sub-groups (see LegitGroups), rebuilt with the catalogue. */
+    private final Map<String, List<Module>> legitGroups = new LinkedHashMap<String, List<Module>>();
 
     private String category = "";
     private String page = "Modules";
@@ -428,8 +435,15 @@ public class AtlasClickGui extends GuiScreen {
             this.categories.add(entry.getKey());
             this.byCategory.put(entry.getKey(), entry.getValue());
         }
-        if ("Legit".equals(this.page) && this.categories.contains("Legit")) {
-            this.category = "Legit";
+        this.legitGroups.clear();
+        List<Module> legit = this.byCategory.get("Legit");
+        if (legit != null) {
+            this.legitGroups.putAll(LegitGroups.group(legit));
+        }
+        if ("Legit".equals(this.page) && !this.legitGroups.isEmpty()) {
+            if (!this.legitGroups.containsKey(this.category)) {
+                this.category = this.legitGroups.keySet().iterator().next();
+            }
         } else if (!this.categories.contains(this.category) || "Legit".equals(this.category)) {
             this.category = firstModuleCategory();
         }
@@ -465,9 +479,7 @@ public class AtlasClickGui extends GuiScreen {
     private List<String> sidebarCategories() {
         List<String> out = new ArrayList<String>();
         if ("Legit".equals(this.page)) {
-            if (this.byCategory.containsKey("Legit")) {
-                out.add("Legit");
-            }
+            out.addAll(this.legitGroups.keySet());
         } else if ("Modules".equals(this.page)) {
             for (String name : this.categories) {
                 if (!"Legit".equals(name)) {
@@ -621,20 +633,27 @@ public class AtlasClickGui extends GuiScreen {
         }
         String needle = this.search.toLowerCase().trim();
         if (!needle.isEmpty()) {
-            /* Search spans every category inside the active top-level tab. */
+            /* Search spans every page: this page's matches first, then the other
+               page's, which the list draws as borrowed (see drawList). */
+            List<Module> elsewhere = new ArrayList<Module>();
             for (List<Module> list : this.byCategory.values()) {
                 for (Module module : list) {
-                    if (module != null && belongsOnPage(module)
-                            && module.getName().toLowerCase().contains(needle)
-                            && !out.contains(module)) {
+                    if (module == null || !module.getName().toLowerCase().contains(needle)
+                            || out.contains(module) || elsewhere.contains(module)) {
+                        continue;
+                    }
+                    if (belongsOnPage(module)) {
                         out.add(module);
+                    } else {
+                        elsewhere.add(module);
                     }
                 }
             }
+            out.addAll(elsewhere);
             return out;
         }
-        String selectedCategory = "Legit".equals(this.page) ? "Legit" : this.category;
-        List<Module> list = this.byCategory.get(selectedCategory);
+        List<Module> list = "Legit".equals(this.page) ? this.legitGroups.get(this.category)
+                : this.byCategory.get(this.category);
         if (list != null) {
             for (Module module : list) {
                 if (module != null) {
@@ -664,7 +683,7 @@ public class AtlasClickGui extends GuiScreen {
         this.detailScroll = 0;
         this.dropdown = null;
         if ("Legit".equals(next)) {
-            this.category = "Legit";
+            this.category = this.legitGroups.isEmpty() ? "Legit" : this.legitGroups.keySet().iterator().next();
             this.profilesView = false;
             this.appearanceView = false;
             List<Module> modules = visibleModules();
@@ -672,7 +691,7 @@ public class AtlasClickGui extends GuiScreen {
         } else if ("Modules".equals(next)) {
             this.profilesView = false;
             this.appearanceView = false;
-            if ("Legit".equals(this.category)) {
+            if ("Legit".equals(this.category) || this.legitGroups.containsKey(this.category)) {
                 this.category = firstModuleCategory();
             }
             List<Module> modules = visibleModules();
@@ -796,6 +815,7 @@ public class AtlasClickGui extends GuiScreen {
 
         long frameStart = System.nanoTime();
         applyTheme();
+        paintPalette();
         followDrag(sr, mouseX, mouseY);
         /* Before anything of the menu is drawn: the copy it blurs has to be
            of the world alone. */
@@ -866,10 +886,10 @@ public class AtlasClickGui extends GuiScreen {
             int bodyTop = y + HEADER;
             int bodyHeight = height - HEADER - FOOTER;
             drawHeader(x, y, width, sidebar, detail, mx, my);
-            Liquid.rect(x + 14, y + HEADER - 0.5F, x + width - 14, y + HEADER, 0.0F, 0x12FFFFFF);
-            Liquid.rect(x + sidebar, bodyTop + 10, x + sidebar + 0.5F, bodyTop + bodyHeight - 10, 0.0F, 0x0FFFFFFF);
+            Liquid.rect(x + 14, y + HEADER - 0.5F, x + width - 14, y + HEADER, 0.0F, ink(0x12));
+            Liquid.rect(x + sidebar, bodyTop + 10, x + sidebar + 0.5F, bodyTop + bodyHeight - 10, 0.0F, ink(0x0F));
             Liquid.rect(x + width - detail, bodyTop + 10, x + width - detail + 0.5F,
-                    bodyTop + bodyHeight - 10, 0.0F, 0x0FFFFFFF);
+                    bodyTop + bodyHeight - 10, 0.0F, ink(0x0F));
 
             drawSidebar(x, bodyTop, bodyHeight, sidebar, mx, my);
             if (this.profilesView) {
@@ -945,23 +965,36 @@ public class AtlasClickGui extends GuiScreen {
     }
 
     private void drawHeader(int x, int y, int width, int sidebar, int detail, float mx, float my) {
-        float cy = y + 23.0F;
+        float cy = y + HEADER / 2.0F;
         int accent = accent();
 
         /* The mark: a bead of the accent colour with light caught on top. */
-        Liquid.shadow(x + 11, cy - 7, x + 25, cy + 7, 7.0F, 6.0F, alpha(accent, 0.55F), 0.0F);
-        Liquid.rect(x + 11, cy - 7, x + 25, cy + 7, 7.0F, accent, darker(accent));
-        Liquid.rect(x + 13, cy - 6, x + 23, cy - 1, 3.0F, 0x8CFFFFFF, 0x00FFFFFF);
+        Liquid.shadow(x + 13, cy - 6, x + 25, cy + 6, 6.0F, 5.0F, alpha(accent, 0.55F), 0.0F);
+        Liquid.rect(x + 13, cy - 6, x + 25, cy + 6, 6.0F, accent, darker(accent));
+        Liquid.rect(x + 15, cy - 5, x + 23, cy - 1, 2.5F, 0x8CFFFFFF, 0x00FFFFFF);
         float brand = font(12.5F, true).draw("Myau+", x + 31, cy, TEXT);
-        font(12.5F, false).draw("Atlas", x + 31 + brand + 5, cy, FAINT);
+        float brandEnd = x + 31 + brand + 5 + font(12.5F, false).draw("Atlas", x + 31 + brand + 5, cy, FAINT);
 
-        /* The search box is scoped to the selected top-level page. */
-        float sx = x + sidebar + 12;
-        float sx2 = x + width - detail - 12;
-        float sy = y + 11;
-        float sy2 = y + 35.0F;
-        float scy = (sy + sy2) / 2.0F;
-        boolean searchable = !"Client Settings".equals(this.page);
+        /* One row: the page tabs after the brand, the HUD editor and the
+           dark/light switch on the right, and the search box filling the rest. */
+        float tabsEnd = drawPageTabs(brandEnd + 14, cy, mx, my);
+
+        float right = x + width - 12;
+        float editorWidth = font(8.5F, true).width("HUD Editor") + 22;
+        float editorX = right - editorWidth;
+        drawButton("hudEditor", null, editorX, cy, editorWidth, "HUD Editor", 0, mx, my);
+        if (mx >= editorX && mx <= right && my >= cy - 10 && my <= cy + 10) {
+            this.hint = "Move the HUD elements on screen";
+        }
+        float modeLeft = drawModeSwitch(editorX - 10, cy, width >= 600, mx, my);
+
+        /* Search covers every page; results from the other page are marked in the list. */
+        float sx = tabsEnd + 12;
+        float sx2 = modeLeft - 10;
+        float sy = cy - 11.0F;
+        float sy2 = cy + 11.0F;
+        float scy = cy;
+        boolean searchable = !"Client Settings".equals(this.page) && sx2 - sx >= 70.0F;
         if (searchable) {
             hit("search", null, sx, sy, sx2, sy2);
         }
@@ -969,17 +1002,17 @@ public class AtlasClickGui extends GuiScreen {
         float focus = ease("searchFocus", this.searchFocused || !this.search.isEmpty(), 12.0F);
         float lift = ease("searchHover", hovered, 12.0F);
         if (searchable && focus > 0.01F) {
-            Liquid.shadow(sx, sy, sx2, sy2, 12.0F, 7.0F, alpha(accent, 0.32F * focus), 0.0F);
+            Liquid.shadow(sx, sy, sx2, sy2, 11.0F, 7.0F, alpha(accent, 0.32F * focus), 0.0F);
         }
         if (searchable) {
-            Liquid.rect(sx, sy, sx2, sy2, 12.0F, alpha(WHITE, 0.075F + 0.03F * lift + 0.03F * focus),
-                    alpha(WHITE, 0.045F + 0.015F * lift));
-            Liquid.rim(sx, sy, sx2, sy2, 12.0F, 1.0F, blend(0x33FFFFFF, alpha(accent, 0.8F), focus),
-                    0x0DFFFFFF);
+            Liquid.rect(sx, sy, sx2, sy2, 11.0F, alpha(INK, 0.075F + 0.03F * lift + 0.03F * focus),
+                    alpha(INK, 0.045F + 0.015F * lift));
+            Liquid.rim(sx, sy, sx2, sy2, 11.0F, 1.0F, blend(ink(0x33), alpha(accent, 0.8F), focus),
+                    ink(0x0D));
             icon("search", sx + 12, scy, focus > 0.5F ? TEXT : FAINT);
             LiquidFont body = font(9.0F, false);
             if (this.search.isEmpty()) {
-                body.draw(this.searchFocused ? "" : "Search " + this.page.toLowerCase(), sx + 23, scy, FAINT);
+                body.draw(this.searchFocused ? "" : "Search all modules", sx + 23, scy, FAINT);
             } else {
                 float typed = body.draw(body.trim(this.search, sx2 - sx - 70), sx + 23, scy, TEXT);
                 String results = visibleModules().size() + " found";
@@ -994,63 +1027,94 @@ public class AtlasClickGui extends GuiScreen {
             }
         }
 
-        /* How much is switched on, everywhere. */
-        String active = enabledCount() + " active";
-        LiquidFont count = font(9.0F, false);
-        float cw = count.drawRight(active, x + width - 16, cy, DIM);
-        float dotX = x + width - 16 - cw - 8.5F;
-        Liquid.shadow(dotX - 2.5F, cy - 2.5F, dotX + 2.5F, cy + 2.5F, 2.5F, 3.0F, alpha(accent, 0.9F), 0.0F);
-        Liquid.dot(dotX, cy, 2.5F, accent);
-
         if (hovered) {
-            this.hint = "Search " + this.page.toLowerCase();
-        } else if (mx >= x && mx <= x + width && my >= y && my <= y + HEADER - 1) {
+            this.hint = "Search every page  ·  results from the other page are tagged";
+        } else if (this.hint.isEmpty() && mx >= x && mx <= x + width && my >= y && my <= y + HEADER - 1) {
             this.hint = "Drag here to move the window  ·  Ctrl+R resets it";
         }
-        drawPageTabs(x, y, width, mx, my);
     }
 
-    private void drawPageTabs(int x, int y, int width, float mx, float my) {
+    /**
+     * The page tabs as one compact segmented control. The selection slides
+     * between tabs on a spring and takes each tab's width on the way.
+     * Returns the control's right edge.
+     */
+    private float drawPageTabs(float left, float cy, float mx, float my) {
         String[] names = {"Modules", "Legit", "Client Settings"};
-        float tabWidth = 96.0F;
-        float gap = 6.0F;
-        float total = tabWidth * names.length + gap * (names.length - 1);
-        float cursor = x + (width - total) / 2.0F;
-        float top = y + 40.0F;
-        float bottom = y + 62.0F;
-        Liquid.rect(cursor, top, cursor + total, bottom, 9.0F,
-                alpha(WHITE, 0.055F), alpha(WHITE, 0.025F));
-        Liquid.rim(cursor, top, cursor + total, bottom, 9.0F, 1.0F,
-                alpha(WHITE, 0.085F), alpha(WHITE, 0.035F));
+        LiquidFont label = font(8.5F, false);
+        float pad = 9.0F;
+        float top = cy - 9.0F;
+        float bottom = cy + 9.0F;
+        float[] lefts = new float[names.length];
+        float[] widths = new float[names.length];
+        float cursor = left + 2.0F;
+        int activeIndex = 0;
+        for (int i = 0; i < names.length; i++) {
+            widths[i] = label.width(names[i]) + pad * 2.0F;
+            lefts[i] = cursor;
+            cursor += widths[i];
+            if (names[i].equals(this.page)) {
+                activeIndex = i;
+            }
+        }
+        float right = cursor + 2.0F;
+        Liquid.rect(left, top, right, bottom, 9.0F, ink(0x0E), ink(0x08));
+        Liquid.rim(left, top, right, bottom, 9.0F, 1.0F, ink(0x16), ink(0x08));
+
+        /* In the control's own coordinates, so moving the window carries it along. */
+        Spring slide = spring("tabSlide", lefts[activeIndex] - left, 420.0F, 30.0F);
+        Spring size = spring("tabSize", widths[activeIndex], 420.0F, 30.0F);
+        float px = left + slide.value;
+        float px2 = px + size.value;
+        int accent = accent();
+        Liquid.shadow(px, top + 2, px2, bottom - 2, 7.0F, 4.0F, alpha(accent, 0.22F), 0.0F);
+        Liquid.rect(px, top + 2, px2, bottom - 2, 7.0F, alpha(accent, 0.32F), alpha(accent, 0.18F));
+        Liquid.rim(px, top + 2, px2, bottom - 2, 7.0F, 1.0F, alpha(accent, 0.75F), alpha(accent, 0.30F));
+
         for (int i = 0; i < names.length; i++) {
             String name = names[i];
-            float right = cursor + tabWidth;
-            float innerLeft = cursor + 2.0F;
-            float innerRight = right - 2.0F;
-            float innerTop = top + 2.0F;
-            float innerBottom = bottom - 2.0F;
-            boolean active = name.equals(this.page);
-            boolean hovered = mx >= cursor && mx <= right && my >= top && my <= bottom;
-            hit("page", name, cursor, top, right, bottom);
-            float glow = active ? 1.0F : ease("page:" + name, hovered, 10.0F);
-            if (active) {
-                Liquid.shadow(innerLeft, innerTop, innerRight, innerBottom, 7.0F, 5.0F,
-                        alpha(accent(), 0.24F), 0.0F);
-                Liquid.rect(innerLeft, innerTop, innerRight, innerBottom, 7.0F,
-                        alpha(accent(), 0.30F), alpha(accent(), 0.15F));
-                Liquid.rim(innerLeft, innerTop, innerRight, innerBottom, 7.0F, 1.0F,
-                        alpha(accent(), 0.78F), alpha(accent(), 0.34F));
-            } else if (glow > 0.01F) {
-                Liquid.rect(innerLeft, innerTop, innerRight, innerBottom, 7.0F,
-                        alpha(WHITE, 0.08F * glow), alpha(WHITE, 0.035F * glow));
+            float l = lefts[i];
+            float r = l + widths[i];
+            boolean active = i == activeIndex;
+            boolean hovered = mx >= l && mx <= r && my >= top && my <= bottom;
+            hit("page", name, l, top, r, bottom);
+            float glow = active ? 0.0F : ease("page:" + name, hovered, 10.0F);
+            if (glow > 0.01F) {
+                Liquid.rect(l + 1, top + 2, r - 1, bottom - 2, 7.0F,
+                        alpha(INK, 0.08F * glow), alpha(INK, 0.035F * glow));
             }
-            font(8.5F, active).drawCentred(name, cursor + tabWidth / 2.0F,
-                    top + (bottom - top) / 2.0F, active ? TEXT : DIM);
+            font(8.5F, active).drawCentred(name, l + widths[i] / 2.0F, cy, active ? TEXT : blend(DIM, TEXT, glow));
             if (hovered) {
                 this.hint = "Open " + name;
             }
-            cursor = right + gap;
         }
+        return right;
+    }
+
+    /**
+     * The dark/light switch, right-aligned at {@code right}: a label (when there
+     * is room for it) and a switch. Returns its left edge.
+     */
+    private float drawModeSwitch(float right, float cy, boolean withLabel, float mx, float my) {
+        boolean light = this.theme.isLight();
+        float switchWidth = 22.0F;
+        float switchX = right - switchWidth;
+        float left = switchX;
+        LiquidFont small = font(8.0F, false);
+        String label = light ? "Light" : "Dark";
+        if (withLabel) {
+            left = switchX - 6 - small.width(label);
+        }
+        hit("themeMode", null, left - 4, cy - 10, right + 2, cy + 10);
+        boolean hovered = mx >= left - 4 && mx <= right + 2 && my >= cy - 10 && my <= cy + 10;
+        if (withLabel) {
+            small.draw(label, left, cy, hovered ? TEXT : DIM);
+        }
+        drawSwitch("themeMode", switchX, cy, switchWidth, 12.0F, light);
+        if (hovered) {
+            this.hint = light ? "Switch the menu and the HUD to dark" : "Switch the menu and the HUD to light";
+        }
+        return left - 4;
     }
 
     /**
@@ -1060,7 +1124,7 @@ public class AtlasClickGui extends GuiScreen {
     private void drawGrip(int right, int bottom, float mx, float my) {
         boolean hovered = mx >= right - 14 && mx <= right - 2 && my >= bottom - 14 && my <= bottom - 2;
         hit("grip", null, right - 14, bottom - 14, right - 2, bottom - 2);
-        int colour = hovered || this.resizingWindow ? accent() : 0x40FFFFFF;
+        int colour = hovered || this.resizingWindow ? accent() : ink(0x40);
         Liquid.line(right - 13, bottom - 5, right - 5, bottom - 13, 1.1F, colour);
         Liquid.line(right - 9, bottom - 5, right - 5, bottom - 9, 1.1F, colour);
         if (hovered) {
@@ -1123,12 +1187,12 @@ public class AtlasClickGui extends GuiScreen {
             float rowLit = ease("cat:" + name, hovered && !active, 10.0F);
             if (rowLit > 0.01F) {
                 Liquid.rect(x + 10, rowY, x + sidebar - 10, rowY + CAT_H, 11.0F,
-                        alpha(0x12FFFFFF, rowLit), alpha(0x0AFFFFFF, rowLit));
+                        alpha(ink(0x12), rowLit), alpha(ink(0x0A), rowLit));
             }
             float cy = rowY + CAT_H / 2.0F;
-            icon(name, x + 25, cy, active ? TEXT : DIM);
+            icon(sidebarIcon(name), x + 25, cy, active ? TEXT : DIM);
             font(9.5F, active).draw(font(9.5F, active).trim(name, sidebar - 60), x + 36, cy, active ? TEXT : DIM);
-            List<Module> list = this.byCategory.get(name);
+            List<Module> list = modulesOf(name);
             int on = 0;
             for (Module module : list) {
                 if (module != null && module.isEnabled()) {
@@ -1152,7 +1216,7 @@ public class AtlasClickGui extends GuiScreen {
             float rowLit = ease("cat:\u0000profiles", hovered && !this.profilesView, 10.0F);
             if (rowLit > 0.01F) {
                 Liquid.rect(x + 10, profilesRow, x + sidebar - 10, profilesRow + CAT_H, 11.0F,
-                        alpha(0x12FFFFFF, rowLit), alpha(0x0AFFFFFF, rowLit));
+                        alpha(ink(0x12), rowLit), alpha(ink(0x0A), rowLit));
             }
             float cy = profilesRow + CAT_H / 2.0F;
             icon("folder", x + 25, cy, this.profilesView ? TEXT : DIM);
@@ -1170,7 +1234,7 @@ public class AtlasClickGui extends GuiScreen {
             float rowLit = ease("cat:#appearance", hovered && !this.appearanceView, 10.0F);
             if (rowLit > 0.01F) {
                 Liquid.rect(x + 10, appearanceRow, x + sidebar - 10, appearanceRow + CAT_H, 11.0F,
-                        alpha(0x12FFFFFF, rowLit), alpha(0x0AFFFFFF, rowLit));
+                        alpha(ink(0x12), rowLit), alpha(ink(0x0A), rowLit));
             }
             float cy = appearanceRow + CAT_H / 2.0F;
             icon("palette", x + 25, cy, this.appearanceView ? TEXT : DIM);
@@ -1230,9 +1294,9 @@ public class AtlasClickGui extends GuiScreen {
         if (focus > 0.01F) {
             Liquid.shadow(x + 10, fy, buttonX - 6, fy2, 11.0F, 6.0F, alpha(accent, 0.30F * focus), 0.0F);
         }
-        Liquid.rect(x + 10, fy, buttonX - 6, fy2, 11.0F, alpha(WHITE, 0.07F + 0.03F * focus), 0x0BFFFFFF);
-        Liquid.rim(x + 10, fy, buttonX - 6, fy2, 11.0F, 1.0F, blend(0x2EFFFFFF, alpha(accent, 0.8F), focus),
-                0x0AFFFFFF);
+        Liquid.rect(x + 10, fy, buttonX - 6, fy2, 11.0F, alpha(INK, 0.07F + 0.03F * focus), ink(0x0B));
+        Liquid.rim(x + 10, fy, buttonX - 6, fy2, 11.0F, 1.0F, blend(ink(0x2E), alpha(accent, 0.8F), focus),
+                ink(0x0A));
         LiquidFont body = font(9.0F, false);
         float typed = 0.0F;
         if (this.profileName.isEmpty()) {
@@ -1302,7 +1366,7 @@ public class AtlasClickGui extends GuiScreen {
             float hoverLit = ease("prow:" + info.name, hovered && !info.name.equals(this.profileSelected), 9.0F);
             if (hoverLit > 0.01F) {
                 Liquid.rect(x + 10, rowY, x + width - 10, rowY + ROW_H, 9.0F,
-                        alpha(0x10FFFFFF, hoverLit), alpha(0x0AFFFFFF, hoverLit));
+                        alpha(ink(0x10), hoverLit), alpha(ink(0x0A), hoverLit));
             }
             float saved = pulseAt("saved:" + info.name, 600L);
             if (saved >= 0.0F) {
@@ -1396,8 +1460,8 @@ public class AtlasClickGui extends GuiScreen {
         List<String> lines = body.wrap(names.length() == 0 ? "Nothing enabled" : names.toString(), cardX2 - cardX - 20);
         float needed = lines.size() * 11 + 12;
         cardBottom = Math.min(cardBottom, cursor + needed);
-        Liquid.rect(cardX, cursor, cardX2, cardBottom, 12.0F, 0x0EFFFFFF, 0x09FFFFFF);
-        Liquid.rim(cardX, cursor, cardX2, cardBottom, 12.0F, 1.0F, 0x24FFFFFF, 0x0AFFFFFF);
+        Liquid.rect(cardX, cursor, cardX2, cardBottom, 12.0F, ink(0x0E), ink(0x09));
+        Liquid.rim(cardX, cursor, cardX2, cardBottom, 12.0F, 1.0F, ink(0x24), ink(0x0A));
         clip(sr, cardX, cursor + 1, cardX2 - cardX, cardBottom - cursor - 2);
         float lineY = cursor + 11;
         for (String line : lines) {
@@ -1496,7 +1560,7 @@ public class AtlasClickGui extends GuiScreen {
             float hoverLit = ease("grp:" + group, hovered && !active, 9.0F);
             if (hoverLit > 0.01F) {
                 Liquid.rect(x + 10, rowY, x + width - 10, rowY + ROW_H, 9.0F,
-                        alpha(0x10FFFFFF, hoverLit), alpha(0x0AFFFFFF, hoverLit));
+                        alpha(ink(0x10), hoverLit), alpha(ink(0x0A), hoverLit));
             }
             icon(group, x + 22, cy, active ? TEXT : DIM);
             font(9.5F, active).draw(group, x + 34, cy, active ? TEXT : DIM);
@@ -1559,7 +1623,7 @@ public class AtlasClickGui extends GuiScreen {
         Liquid.rect(x + squash, y + squash * 0.5F, x + w - squash, y2 - squash * 0.5F, 10.0F,
                 alpha(colour, fill), alpha(colour, fill * 0.7F));
         Liquid.rim(x + squash, y + squash * 0.5F, x + w - squash, y2 - squash * 0.5F, 10.0F, 1.0F,
-                alpha(style == 1 ? 0xFFFFFFFF : colour, style == 1 ? 0.2F : 0.65F), 0x0AFFFFFF);
+                alpha(style == 1 ? 0xFFFFFFFF : colour, style == 1 ? 0.2F : 0.65F), ink(0x0A));
         bold.drawCentred(label, x + w / 2.0F, cy, TEXT);
         if (hovered) {
             if ("profileLoad".equals(kind)) {
@@ -1583,8 +1647,8 @@ public class AtlasClickGui extends GuiScreen {
 
     /** Who is playing, and where: the account, the server and the ping. */
     private void drawProfile(int x, float y, int sidebar) {
-        Liquid.rect(x + 10, y, x + sidebar - 10, y + 28, 11.0F, 0x0DFFFFFF, 0x08FFFFFF);
-        Liquid.rim(x + 10, y, x + sidebar - 10, y + 28, 11.0F, 1.0F, 0x1FFFFFFF, 0x08FFFFFF);
+        Liquid.rect(x + 10, y, x + sidebar - 10, y + 28, 11.0F, ink(0x0D), ink(0x08));
+        Liquid.rim(x + 10, y, x + sidebar - 10, y + 28, 11.0F, 1.0F, ink(0x1F), ink(0x08));
         String name = mc.getSession() == null ? "Player" : mc.getSession().getUsername();
         float cy = y + 14;
         Liquid.rect(x + 16, cy - 7, x + 30, cy + 7, 7.0F, 0xFF8E7CFF, accent());
@@ -1628,8 +1692,18 @@ public class AtlasClickGui extends GuiScreen {
         }
         String title = searching ? "Search" : this.category;
         font(15.0F, true).draw(title, x + 16, y + 17, TEXT);
+        int elsewhere = 0;
+        if (searching) {
+            for (Module module : modules) {
+                if (!belongsOnPage(module)) {
+                    elsewhere++;
+                }
+            }
+        }
         String subtitle = searching
-                ? modules.size() + (modules.size() == 1 ? " result" : " results") + "  ·  " + on + " enabled"
+                ? modules.size() + (modules.size() == 1 ? " result" : " results")
+                        + (elsewhere > 0 ? "  ·  " + elsewhere + " from another page" : "")
+                        + "  ·  " + on + " enabled"
                 : modules.size() + " modules  ·  " + on + " enabled";
         font(8.0F, false).draw(subtitle, x + 16, y + 31, FAINT);
 
@@ -1694,7 +1768,15 @@ public class AtlasClickGui extends GuiScreen {
             float hoverLit = ease("row:" + module.getName(), hovered && !isSelected, 9.0F);
             if (hoverLit > 0.01F) {
                 Liquid.rect(x + 10, rowY, x + width - 10, rowY + ROW_H, 9.0F,
-                        alpha(0x10FFFFFF, hoverLit), alpha(0x0AFFFFFF, hoverLit));
+                        alpha(ink(0x10), hoverLit), alpha(ink(0x0A), hoverLit));
+            }
+            /* A result from the other page looks borrowed: its own tint, a dashed
+               edge, and a tag naming the page it lives on. */
+            boolean foreign = searching && !belongsOnPage(module);
+            if (foreign) {
+                Liquid.rect(x + 10, rowY, x + width - 10, rowY + ROW_H, 9.0F,
+                        alpha(foreignColour(), 0.10F), alpha(foreignColour(), 0.05F));
+                dashedRim(x + 10, rowY, x + width - 10, rowY + ROW_H, 9.0F, alpha(foreignColour(), 0.75F));
             }
             float cy = rowY + ROW_H / 2.0F;
             int accent = accent();
@@ -1718,7 +1800,7 @@ public class AtlasClickGui extends GuiScreen {
                 Liquid.shadow(x + 18, cy - 2.5F, x + 23, cy + 2.5F, 2.5F, 4.0F, alpha(accent, 0.9F * onLit), 0.0F);
             }
             if (dots) {
-                Liquid.dot(x + 20.5F, cy, 2.5F, blend(0x2EFFFFFF, accent, onLit));
+                Liquid.dot(x + 20.5F, cy, 2.5F, blend(ink(0x2E), accent, onLit));
             }
 
             LiquidFont name = font(9.5F, false);
@@ -1738,13 +1820,26 @@ public class AtlasClickGui extends GuiScreen {
             if (mx >= switchX - 4 && mx <= switchX + 26 && my >= cy - 9 && my <= cy + 9) {
                 this.hint = (module.isEnabled() ? "Turn off " : "Turn on ") + module.getName();
             }
+            float tagRight = switchX - 8;
+            if (foreign) {
+                String source = pageOf(module);
+                LiquidFont tag = font(7.0F, true);
+                float tagLeft = tagRight - tag.width(source) - 10;
+                Liquid.rect(tagLeft, cy - 5.5F, tagRight, cy + 5.5F, 5.5F,
+                        alpha(foreignColour(), 0.28F), alpha(foreignColour(), 0.18F));
+                tag.drawCentred(source, (tagLeft + tagRight) / 2.0F, cy, foreignText());
+                tagRight = tagLeft - 6;
+            }
             String suffix = this.theme.moduleStatus.getValue() ? suffixOf(module) : "";
             if (!suffix.isEmpty()) {
                 LiquidFont small = font(8.0F, false);
-                float room = switchX - 8 - (nameX + nameWidth + (module.isHidden() ? 22 : 10));
+                float room = tagRight - (nameX + nameWidth + (module.isHidden() ? 22 : 10));
                 if (room > 20) {
-                    small.drawRight(small.trim(suffix, room), switchX - 8, cy, FAINT);
+                    small.drawRight(small.trim(suffix, room), tagRight, cy, FAINT);
                 }
+            }
+            if (hovered && foreign && this.hint.isEmpty()) {
+                this.hint = "From the " + pageOf(module) + " page  ·  its settings open here";
             }
             if (hovered && this.hint.isEmpty()) {
                 this.hint = module.getDescription() == null || module.getDescription().isEmpty()
@@ -1760,7 +1855,7 @@ public class AtlasClickGui extends GuiScreen {
             float thumb = Math.max(18.0F, track * maxRows / (float) modules.size());
             float along = (track - thumb) * (shown / (this.listMaxScroll * (float) ROW));
             float barX = x + width - 5;
-            Liquid.rect(barX, top + along, barX + 2.5F, top + along + thumb, 1.25F, 0x40FFFFFF);
+            Liquid.rect(barX, top + along, barX + 2.5F, top + along + thumb, 1.25F, ink(0x40));
         }
     }
 
@@ -1781,11 +1876,11 @@ public class AtlasClickGui extends GuiScreen {
         float lit = Math.max(0.0F, Math.min(1.0F, t));
         int accent = accent();
         float y = cy - h / 2.0F;
-        Liquid.rect(x, y, x + w, y + h, h / 2.0F, alpha(0x1AFFFFFF, 1.0F - lit));
+        Liquid.rect(x, y, x + w, y + h, h / 2.0F, alpha(ink(0x1A), 1.0F - lit));
         if (lit > 0.01F) {
             Liquid.rect(x, y, x + w, y + h, h / 2.0F, alpha(accent, 0.95F * lit), alpha(accent, 0.80F * lit));
         }
-        Liquid.rim(x, y, x + w, y + h, h / 2.0F, 1.0F, 0x38FFFFFF, 0x0FFFFFFF);
+        Liquid.rim(x, y, x + w, y + h, h / 2.0F, 1.0F, ink(0x38), ink(0x0F));
         float pad = 1.5F;
         float knob = h - pad * 2.0F;
         float stretch = Math.min(knob * 0.45F, Math.abs(s.velocity) * this.jelly * 0.018F * knob);
@@ -1901,8 +1996,8 @@ public class AtlasClickGui extends GuiScreen {
             return;
         }
         if (properties.isEmpty()) {
-            Liquid.rect(cardX, cardTop, cardX2, cardTop + 28, 12.0F, 0x0EFFFFFF, 0x09FFFFFF);
-            Liquid.rim(cardX, cardTop, cardX2, cardTop + 28, 12.0F, 1.0F, 0x24FFFFFF, 0x0AFFFFFF);
+            Liquid.rect(cardX, cardTop, cardX2, cardTop + 28, 12.0F, ink(0x0E), ink(0x09));
+            Liquid.rim(cardX, cardTop, cardX2, cardTop + 28, 12.0F, 1.0F, ink(0x24), ink(0x0A));
             body.draw("No settings", cardX + 10, cardTop + 14, FAINT);
             return;
         }
@@ -1917,8 +2012,8 @@ public class AtlasClickGui extends GuiScreen {
         if (this.detailScroll > this.detailMaxScroll) {
             this.detailScroll = this.detailMaxScroll;
         }
-        Liquid.rect(cardX, cardTop, cardX2, cardBottom, 12.0F, 0x0EFFFFFF, 0x09FFFFFF);
-        Liquid.rim(cardX, cardTop, cardX2, cardBottom, 12.0F, 1.0F, 0x24FFFFFF, 0x0AFFFFFF);
+        Liquid.rect(cardX, cardTop, cardX2, cardBottom, 12.0F, ink(0x0E), ink(0x09));
+        Liquid.rim(cardX, cardTop, cardX2, cardBottom, 12.0F, 1.0F, ink(0x24), ink(0x0A));
 
         float scroll = scrollEase("detailScroll", this.detailScroll);
         float rowY = cardTop + 2 - scroll;
@@ -1937,7 +2032,7 @@ public class AtlasClickGui extends GuiScreen {
                     font(7.0F, true).drawTracked(myau.module.ModuleDocs.heading(heading).toUpperCase(java.util.Locale.ROOT), cardX + 12,
                             rowY + HEADING_HEIGHT / 2.0F + 1, accentText(), 0.6F);
                     Liquid.rect(cardX + 10, rowY + HEADING_HEIGHT - 1, cardX2 - 10, rowY + HEADING_HEIGHT - 0.5F,
-                            0.0F, 0x1AFFFFFF);
+                            0.0F, ink(0x1A));
                 }
                 rowY += HEADING_HEIGHT;
                 firstRow = true;
@@ -1948,7 +2043,7 @@ public class AtlasClickGui extends GuiScreen {
             }
             if (rowY + rowHeight > clipTop) {
                 if (!firstRow) {
-                    Liquid.rect(cardX + 10, rowY, cardX2 - 10, rowY + 0.5F, 0.0F, 0x12FFFFFF);
+                    Liquid.rect(cardX + 10, rowY, cardX2 - 10, rowY + 0.5F, 0.0F, ink(0x12));
                 }
                 AtlasInspector.note("settings", property.getName(),
                         cardX + 10, rowY, cardX2 - 10, rowY + rowHeight);
@@ -1963,7 +2058,7 @@ public class AtlasClickGui extends GuiScreen {
             float thumb = Math.max(16.0F, track * visible / content);
             float along = (track - thumb) * (scroll / this.detailMaxScroll);
             Liquid.rect(cardX2 - 5, clipTop + 4 + along, cardX2 - 2.5F, clipTop + 4 + along + thumb,
-                    1.25F, 0x40FFFFFF);
+                    1.25F, ink(0x40));
         }
     }
 
@@ -1992,10 +2087,10 @@ public class AtlasClickGui extends GuiScreen {
             Liquid.shadow(x1, y, x3, y2, 9.0F, 5.0F, alpha(accent, 0.30F * on), 0.0F);
         }
         Liquid.rect(x1, y + squash * 0.5F, x3, y2 - squash * 0.5F, 9.0F,
-                blend(alpha(WHITE, 0.07F + 0.04F * hover), alpha(accent, 0.24F), on),
-                blend(alpha(WHITE, 0.04F + 0.02F * hover), alpha(accent, 0.14F), on));
+                blend(alpha(INK, 0.07F + 0.04F * hover), alpha(accent, 0.24F), on),
+                blend(alpha(INK, 0.04F + 0.02F * hover), alpha(accent, 0.14F), on));
         Liquid.rim(x1, y + squash * 0.5F, x3, y2 - squash * 0.5F, 9.0F, 1.0F,
-                blend(0x2EFFFFFF, alpha(accent, 0.6F), on), 0x0AFFFFFF);
+                blend(ink(0x2E), alpha(accent, 0.6F), on), ink(0x0A));
         icon(iconName, x + 11, cy, blend(DIM, accent, on));
         float labelWidth = small.draw(label, x + 20, cy, FAINT);
         bold.draw(value, x + 20 + labelWidth + 5, cy, TEXT);
@@ -2128,9 +2223,9 @@ public class AtlasClickGui extends GuiScreen {
             label.draw(label.trim(property.getLabel(), Math.min(width - 70, valueLeft - labelX - 8)),
                     labelX, cy, DIM);
             if (beingEdited) {
-                Liquid.rect(valueLeft - 3, cy - 6.5F, right + 3, cy + 6.5F, 5.0F, 0x1FFFFFFF);
+                Liquid.rect(valueLeft - 3, cy - 6.5F, right + 3, cy + 6.5F, 5.0F, ink(0x1F));
                 Liquid.rim(valueLeft - 3, cy - 6.5F, right + 3, cy + 6.5F, 5.0F, 1.0F,
-                        alpha(accent, 0.7F), 0x14FFFFFF);
+                        alpha(accent, 0.7F), ink(0x14));
             }
             float commit = pulseAt("edit:" + property.getName(), 360L);
             if (commit >= 0.0F) {
@@ -2174,7 +2269,7 @@ public class AtlasClickGui extends GuiScreen {
                 }
                 knobColour = AtlasTheme.hsb(currentOf(property), 0.75F, 1.0F);
             } else {
-                Liquid.rect(barX, barY - 1.5F, barX2, barY + 1.5F, 1.5F, 0x1FFFFFFF);
+                Liquid.rect(barX, barY - 1.5F, barX2, barY + 1.5F, 1.5F, ink(0x1F));
                 if (fillX > barX + 0.5F) {
                     Liquid.shadow(barX, barY - 1.5F, fillX, barY + 1.5F, 1.5F, 4.0F, alpha(accent, 0.55F), 0.0F);
                     Liquid.rectH(barX, barY - 1.5F, fillX, barY + 1.5F, 1.5F, alpha(accent, 0.75F), accent);
@@ -2188,7 +2283,7 @@ public class AtlasClickGui extends GuiScreen {
             Liquid.shadow(fillX - r, barY - r, fillX + r, barY + r, r, 3.0F, 0x66000000, 1.0F);
             if (grow.value > 0.05F && Liquid.glass()) {
                 Liquid.Style drop = new Liquid.Style(r * 0.8F, 3.0F, 0.15F, 1.1F, 1.15F,
-                        0x14FFFFFF, 0.85F, 0.0F, 0.0F);
+                        ink(0x14), 0.85F, 0.0F, 0.0F);
                 drop.magnify = 1.0F + 0.45F * Math.min(1.0F, grow.value);
                 this.lenses.add(new Lens(fillX - r, barY - r, fillX + r, barY + r, r, drop,
                         new float[]{x, paneTop, width, paneBottom - paneTop}));
@@ -2253,9 +2348,9 @@ public class AtlasClickGui extends GuiScreen {
                 hit("type", property, right - clippedWidth - 6, cy - 7, right + 4, cy + 7);
             }
             if (beingEdited) {
-                Liquid.rect(right - clippedWidth - 5, cy - 6.5F, right + 3, cy + 6.5F, 5.0F, 0x1FFFFFFF);
+                Liquid.rect(right - clippedWidth - 5, cy - 6.5F, right + 3, cy + 6.5F, 5.0F, ink(0x1F));
                 Liquid.rim(right - clippedWidth - 5, cy - 6.5F, right + 3, cy + 6.5F, 5.0F, 1.0F,
-                        alpha(accent, 0.7F), 0x14FFFFFF);
+                        alpha(accent, 0.7F), ink(0x14));
                 if ((System.currentTimeMillis() / 500L) % 2L == 0L) {
                     Liquid.rect(right + 1, cy - 4.5F, right + 2, cy + 4.5F, 0.0F, accent);
                 }
@@ -2332,12 +2427,12 @@ public class AtlasClickGui extends GuiScreen {
                     + "  ·  click the hex to type one";
         }
         if (beingEdited) {
-            Liquid.rect(hexLeft - 3, cy - 6.5F, hexRight + 3, cy + 6.5F, 5.0F, 0x1FFFFFFF);
-            Liquid.rim(hexLeft - 3, cy - 6.5F, hexRight + 3, cy + 6.5F, 5.0F, 1.0F, alpha(accent, 0.7F), 0x14FFFFFF);
+            Liquid.rect(hexLeft - 3, cy - 6.5F, hexRight + 3, cy + 6.5F, 5.0F, ink(0x1F));
+            Liquid.rim(hexLeft - 3, cy - 6.5F, hexRight + 3, cy + 6.5F, 5.0F, 1.0F, alpha(accent, 0.7F), ink(0x14));
         }
         valueFont.draw(hex, hexLeft, cy, beingEdited ? accent : TEXT);
         Liquid.rect(swatchLeft, cy - 6, right, cy + 6, 4.0F, 0xFF000000 | rgb);
-        Liquid.rim(swatchLeft, cy - 6, right, cy + 6, 4.0F, 1.0F, 0x40FFFFFF, 0x20FFFFFF);
+        Liquid.rim(swatchLeft, cy - 6, right, cy + 6, 4.0F, 1.0F, ink(0x40), ink(0x20));
         if (!open) {
             return;
         }
@@ -2356,7 +2451,7 @@ public class AtlasClickGui extends GuiScreen {
         float boxY2 = boxY + 50;
         Liquid.rectH(boxX, boxY, boxX2, boxY2, 4.0F, 0xFFFFFFFF, pure);
         Liquid.rect(boxX, boxY, boxX2, boxY2, 4.0F, 0x00000000, 0xFF000000);
-        Liquid.rim(boxX, boxY, boxX2, boxY2, 4.0F, 1.0F, 0x30FFFFFF, 0x18FFFFFF);
+        Liquid.rim(boxX, boxY, boxX2, boxY2, 4.0F, 1.0F, ink(0x30), ink(0x18));
         float px = boxX + (boxX2 - boxX) * this.colorHsb[1];
         float py = boxY + (boxY2 - boxY) * (1.0F - this.colorHsb[2]);
         Liquid.ring(px, py, 3.5F, 1.5F, 0xFFFFFFFF);
@@ -2447,7 +2542,7 @@ public class AtlasClickGui extends GuiScreen {
         Liquid.lens(left + squeeze, y1, right - squeeze, y2, 12.0F, popover);
         if (!Liquid.glass()) {
             Liquid.rect(left + squeeze, y1, right - squeeze, y2, 12.0F, 0xF0101420, 0xF00B0E14);
-            Liquid.rim(left + squeeze, y1, right - squeeze, y2, 12.0F, 1.0F, 0x40FFFFFF, 0x0FFFFFFF);
+            Liquid.rim(left + squeeze, y1, right - squeeze, y2, 12.0F, 1.0F, ink(0x40), ink(0x0F));
         }
         if (g < 0.6F) {
             return;
@@ -2464,7 +2559,7 @@ public class AtlasClickGui extends GuiScreen {
             int swatch = this.theme.swatch(this.dropdown, i, clickGuiAccent());
             if (swatch != 0) {
                 Liquid.dot(left + 12, cy, 3.5F, alpha(swatch, content));
-                Liquid.ring(left + 12, cy, 3.5F, 0.8F, alpha(0x40FFFFFF, content));
+                Liquid.ring(left + 12, cy, 3.5F, 0.8F, alpha(ink(0x40), content));
             }
             if (i == current) {
                 Liquid.rect(left + 4, rowY + 1, right - 4, rowY + rowHeight - 1, 7.0F,
@@ -2476,7 +2571,7 @@ public class AtlasClickGui extends GuiScreen {
                 }
             } else if (hovered) {
                 Liquid.rect(left + 4, rowY + 1, right - 4, rowY + rowHeight - 1, 7.0F,
-                        alpha(0x1AFFFFFF, content));
+                        alpha(ink(0x1A), content));
             }
             (i == current ? itemBold : item).draw(modes[i], left + 22, cy,
                     alpha(i == current ? TEXT : (hovered ? TEXT : DIM), content));
@@ -2644,6 +2739,63 @@ public class AtlasClickGui extends GuiScreen {
         return this.theme.accent(clickGuiAccent());
     }
 
+    /** A neutral of the given alpha: white in dark mode, ink in light mode. */
+    private static int ink(int alpha) {
+        return (alpha << 24) | (INK & 0x00FFFFFF);
+    }
+
+    /** Sets the text and neutral colours for the current mode, and tells the HUD. */
+    private void paintPalette() {
+        boolean light = this.theme.isLight();
+        myau.ui.UiMode.setLight(light);
+        TEXT = light ? 0xFF161A21 : 0xFFF5F8FF;
+        DIM = light ? 0xD1404958 : 0xD1C3CEDF;
+        FAINT = light ? 0xA6667080 : 0x9E93A3BA;
+        INK = light ? 0xFF0E1726 : 0xFFFFFFFF;
+    }
+
+    /** The modules behind a sidebar row: a Legit sub-group on the Legit page, a category elsewhere. */
+    private List<Module> modulesOf(String name) {
+        List<Module> list = "Legit".equals(this.page) ? this.legitGroups.get(name) : this.byCategory.get(name);
+        return list == null ? new ArrayList<Module>() : list;
+    }
+
+    private String sidebarIcon(String name) {
+        return "Legit".equals(this.page) ? LegitGroups.icon(name) : name;
+    }
+
+    /** The top-level page a module lives on, as its tab is labelled. */
+    private static String pageOf(Module module) {
+        return ModuleCategories.of(module.getClass()) == Category.LEGIT ? "Legit" : "Modules";
+    }
+
+    /** The colour that marks a search result from the other page. */
+    private static int foreignColour() {
+        return myau.ui.UiMode.isLight() ? 0xFF6A4BD6 : 0xFFB59CFF;
+    }
+
+    private static int foreignText() {
+        return myau.ui.UiMode.isLight() ? 0xFF3E2A99 : 0xFFE9E1FF;
+    }
+
+    /** A dashed outline along the straight parts of a rounded rectangle. */
+    private static void dashedRim(float x, float y, float x2, float y2, float radius, int colour) {
+        float dash = 4.0F;
+        float gap = 3.0F;
+        float t = 1.0F;
+        for (float px = x + radius; px < x2 - radius; px += dash + gap) {
+            float end = Math.min(px + dash, x2 - radius);
+            Liquid.rect(px, y, end, y + t, 0.0F, colour);
+            Liquid.rect(px, y2 - t, end, y2, 0.0F, colour);
+        }
+        float inset = radius * 0.6F;
+        for (float py = y + inset; py < y2 - inset; py += dash + gap) {
+            float end = Math.min(py + dash, y2 - inset);
+            Liquid.rect(x, py, x + t, end, 0.0F, colour);
+            Liquid.rect(x2 - t, py, x2, end, 0.0F, colour);
+        }
+    }
+
     private int clickGuiAccent() {
         try {
             myau.module.modules.ClickGUIModule gui =
@@ -2736,6 +2888,16 @@ public class AtlasClickGui extends GuiScreen {
             this.resizingWindow = true;
             this.grabX = this.userWidth - mouseX;
             this.grabY = this.userHeight - mouseY;
+            return;
+        }
+        if ("themeMode".equals(target.kind)) {
+            this.theme.toggleMode();
+            paintPalette();
+            return;
+        }
+        if ("hudEditor".equals(target.kind)) {
+            pulse("btn:hudEditor");
+            this.mc.displayGuiScreen(new myau.ui.hud.HudEditorScreen(this));
             return;
         }
         if ("page".equals(target.kind)) {
@@ -3268,6 +3430,7 @@ public class AtlasClickGui extends GuiScreen {
         this.openedFor = 0.0F;
         this.open.snap(0.92F);
         applyTheme();
+        paintPalette();
         this.lastFrame = 0L;
         this.lit.clear();
         this.springs.clear();

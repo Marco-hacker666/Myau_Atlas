@@ -369,6 +369,13 @@ final class Liquid {
         if (!compile()) {
             return;
         }
+        if (!myau.util.render.FramebufferCompat.available()) {
+            /* Framebuffers off this frame (OptiFine Fast Render, or FBOs
+               disabled): a bind does nothing, so the blur passes below would
+               draw their full-screen quads onto the screen -- the white
+               screen. The pane uses the plain glass instead (2026-10-05). */
+            return;
+        }
         Framebuffer main = mc.getFramebuffer();
         try {
             ensureTargets(mc.displayWidth, mc.displayHeight);

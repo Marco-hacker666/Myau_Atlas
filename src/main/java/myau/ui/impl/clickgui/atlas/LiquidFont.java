@@ -5,6 +5,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.client.renderer.texture.TextureUtil;
 import org.lwjgl.opengl.GL11;
 
 import java.awt.Color;
@@ -17,7 +18,9 @@ import java.awt.font.GlyphVector;
 import java.awt.font.LineMetrics;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * SF Pro, rasterised for the scale the GUI is actually drawn at.
@@ -32,10 +35,14 @@ import java.util.List;
  * measured bounds, so text is centred on its cap height rather than on a
  * guess; and sizes each sheet to what it holds.
  *
- * Latin-1 only in its own sheets. A string with anything beyond Latin-1 --
- * the Chinese descriptions and labels of ModuleDocs (2026-10-04) -- is drawn
- * whole with the game's font, which has every BMP character in its unicode
- * pages, at this size, the same way as when the typeface failed to load.
+ * Latin-1 comes from one sheet built up front. Anything beyond it -- the
+ * Chinese descriptions and labels of ModuleDocs -- is rasterised a character
+ * at a time on first use from Noto Sans SC, at the same size and scale, into
+ * pages that grow as needed (2026-10-05). Until then such strings were drawn
+ * whole with the game's unicode pages scaled to this size: 16-pixel bitmaps
+ * at a fractional scale, which came out jagged, uneven and broken up. Only a
+ * string with a character neither face has -- or when the faces failed to
+ * load -- still goes to the game's font.
  */
 final class LiquidFont {
 
@@ -53,6 +60,11 @@ final class LiquidFont {
     private static int cacheScale = -1;
     private static Font face;
     private static boolean faceTried;
+    /* The face for everything beyond Latin-1 (CJK), loaded once; null if it failed. */
+    private static final String CJK_FILE = "NotoSansSC-Regular.ttf";
+    private static Font cjkFace;
+    private static boolean cjkFaceTried;
+    private static final int PAGE = 1024;
 
     /** Multiplies the alpha of everything drawn, for the menu fading in. */
     static float alpha = 1.0F;
@@ -73,6 +85,29 @@ final class LiquidFont {
     private final float[] u1 = new float[LAST + 1];
     private final float[] v1 = new float[LAST + 1];
     private final boolean[] present = new boolean[LAST + 1];
+
+    /** One character beyond Latin-1, on one of the pages. */
+    private static final class Glyph {
+        int texture;
+        boolean visible;
+        float advance;
+        float offsetX;
+        float offsetY;
+        float width;
+        float height;
+        float u0;
+        float v0;
+        float u1;
+        float v1;
+    }
+
+    private boolean bold;
+    private Font cjkFont;
+    private final Map<Character, Glyph> extra = new HashMap<Character, Glyph>();
+    private final List<DynamicTexture> pages = new ArrayList<DynamicTexture>();
+    private int pageX;
+    private int pageY;
+    private int pageRow;
 
     static LiquidFont of(float size, boolean bold) {
         int scale = Math.max(1, Liquid.scale());
@@ -109,6 +144,7 @@ final class LiquidFont {
     private LiquidFont(float size, boolean bold, int scale) {
         this.size = size;
         this.scale = scale;
+        this.bold = bold;
         try {
             build(bold);
             this.ok = true;
@@ -132,6 +168,30 @@ final class LiquidFont {
             }
         }
         return face;
+    }
+
+    private static Font cjkFace() {
+        if (!cjkFaceTried) {
+            cjkFaceTried = true;
+            try {
+                cjkFace = CFontRenderer.getFontFromTTF(CJK_FILE, 12.0F, Font.TRUETYPE_FONT);
+            } catch (Throwable ignored) {
+                cjkFace = null;
+            }
+        }
+        return cjkFace;
+    }
+
+    /** The CJK face at this size and weight, or null when it is not available. */
+    private Font cjkFont() {
+        if (this.cjkFont == null) {
+            Font base = cjkFace();
+            if (base == null) {
+                return null;
+            }
+            this.cjkFont = base.deriveFont(this.bold ? Font.BOLD : Font.PLAIN, this.size * this.scale);
+        }
+        return this.cjkFont;
     }
 
     private void build(boolean bold) {
@@ -179,11 +239,7 @@ final class LiquidFont {
 
         BufferedImage image = new BufferedImage(SHEET_WIDTH, sheetHeight, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = image.createGraphics();
-        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-        g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-        g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+        hints(g);
         g.setFont(font);
         g.setColor(Color.WHITE);
         for (int c = FIRST; c <= LAST; c++) {
@@ -206,18 +262,8 @@ final class LiquidFont {
         }
         g.dispose();
 
-        /* Light text on a dark translucent surface reads thinner than the
-           same coverage the other way round; lifting the midtones of the
-           coverage a little puts the weight back. */
         int[] pixels = image.getRGB(0, 0, SHEET_WIDTH, sheetHeight, null, 0, SHEET_WIDTH);
-        for (int i = 0; i < pixels.length; i++) {
-            int a = (pixels[i] >>> 24) & 0xFF;
-            if (a == 0) {
-                continue;
-            }
-            int lifted = (int) Math.round(255.0 * Math.pow(a / 255.0, 0.82));
-            pixels[i] = (lifted << 24) | 0x00FFFFFF;
-        }
+        lift(pixels);
         image.setRGB(0, 0, SHEET_WIDTH, sheetHeight, pixels, 0, SHEET_WIDTH);
         this.texture = new DynamicTexture(image);
         GlStateManager.bindTexture(this.texture.getGlTextureId());
@@ -231,14 +277,142 @@ final class LiquidFont {
             this.texture.deleteGlTexture();
             this.texture = null;
         }
+        for (DynamicTexture page : this.pages) {
+            page.deleteGlTexture();
+        }
+        this.pages.clear();
+        this.extra.clear();
         this.ok = false;
+    }
+
+    /**
+     * A character beyond Latin-1, rasterised and uploaded the first time it
+     * is asked for. Must be called on the render thread (it uploads).
+     */
+    private Glyph extraGlyph(char c) {
+        Glyph glyph = this.extra.get(c);
+        if (glyph != null) {
+            return glyph;
+        }
+        glyph = new Glyph();
+        this.extra.put(c, glyph);
+        Font font = cjkFont();
+        if (font == null) {
+            return glyph;
+        }
+        FontRenderContext frc = new FontRenderContext(null, true, true);
+        GlyphVector vector = font.createGlyphVector(frc, String.valueOf(c));
+        glyph.advance = vector.getGlyphMetrics(0).getAdvanceX() / this.scale;
+        Rectangle box = vector.getPixelBounds(frc, 0.0F, 0.0F);
+        if (box.width <= 0 || box.height <= 0) {
+            return glyph;
+        }
+        int w = box.width + PAD * 2;
+        int h = box.height + PAD * 2;
+        if (w > PAGE || h > PAGE) {
+            return glyph;
+        }
+        if (!this.pages.isEmpty() && this.pageX + w > PAGE) {
+            this.pageX = PAD;
+            this.pageY += this.pageRow;
+            this.pageRow = 0;
+        }
+        if (this.pages.isEmpty() || this.pageY + h > PAGE) {
+            /* A fresh, cleared page: the space between cells must be clear,
+               or filtering at a cell's edge would pick up garbage. */
+            DynamicTexture page = new DynamicTexture(new BufferedImage(PAGE, PAGE, BufferedImage.TYPE_INT_ARGB));
+            GlStateManager.bindTexture(page.getGlTextureId());
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+            this.pages.add(page);
+            this.pageX = PAD;
+            this.pageY = PAD;
+            this.pageRow = 0;
+        }
+        BufferedImage image = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = image.createGraphics();
+        hints(g);
+        g.setFont(font);
+        g.setColor(Color.WHITE);
+        g.drawString(String.valueOf(c), PAD - box.x, PAD - box.y);
+        g.dispose();
+        int[] pixels = image.getRGB(0, 0, w, h, null, 0, w);
+        lift(pixels);
+        DynamicTexture page = this.pages.get(this.pages.size() - 1);
+        GlStateManager.bindTexture(page.getGlTextureId());
+        /* blur = linear filtering, clamp off: the cell's own padding keeps neighbours out. */
+        TextureUtil.uploadTextureMipmap(new int[][]{pixels}, w, h, this.pageX, this.pageY, true, false);
+        GlStateManager.bindTexture(0);
+        glyph.texture = page.getGlTextureId();
+        glyph.visible = true;
+        glyph.offsetX = (box.x - PAD) / (float) this.scale;
+        glyph.offsetY = (box.y - PAD) / (float) this.scale;
+        glyph.width = w / (float) this.scale;
+        glyph.height = h / (float) this.scale;
+        glyph.u0 = this.pageX / (float) PAGE;
+        glyph.v0 = this.pageY / (float) PAGE;
+        glyph.u1 = (this.pageX + w) / (float) PAGE;
+        glyph.v1 = (this.pageY + h) / (float) PAGE;
+        this.pageX += w;
+        this.pageRow = Math.max(this.pageRow, h);
+        return glyph;
+    }
+
+    private static void hints(Graphics2D g) {
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+    }
+
+    /* Light text on a dark translucent surface reads thinner than the same
+       coverage the other way round; lifting the midtones of the coverage a
+       little puts the weight back. */
+    private static void lift(int[] pixels) {
+        for (int i = 0; i < pixels.length; i++) {
+            int a = (pixels[i] >>> 24) & 0xFF;
+            if (a == 0) {
+                continue;
+            }
+            int lifted = (int) Math.round(255.0 * Math.pow(a / 255.0, 0.82));
+            pixels[i] = (lifted << 24) | 0x00FFFFFF;
+        }
     }
 
     private static int glyphOf(char c) {
         return c >= FIRST && c <= LAST ? c : '?';
     }
 
-    /** Whether the sheets can draw this: Latin-1 only. */
+    /**
+     * Whether this font can draw the whole string itself: every character is
+     * Latin-1 or one the CJK face has. Anything else (an emoji, a surrogate
+     * pair) sends the whole string to the game's font, as before.
+     */
+    private boolean drawable(String text) {
+        if (!this.ok) {
+            return false;
+        }
+        Font cjk = null;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c <= LAST) {
+                continue;
+            }
+            if (cjk == null) {
+                cjk = cjkFont();
+                if (cjk == null) {
+                    return false;
+                }
+            }
+            if (Character.isSurrogate(c) || !cjk.canDisplay(c)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Whether every character is Latin-1 (used for wrapping: no spaces to break CJK at). */
     private static boolean latin(String text) {
         for (int i = 0; i < text.length(); i++) {
             if (text.charAt(i) > LAST) {
@@ -256,12 +430,13 @@ final class LiquidFont {
         if (text == null || text.isEmpty()) {
             return 0.0F;
         }
-        if (!this.ok || !latin(text)) {
+        if (!drawable(text)) {
             return fallbackFont().getStringWidth(text) * fallbackScale();
         }
         float w = 0.0F;
         for (int i = 0; i < text.length(); i++) {
-            w += this.advance[glyphOf(text.charAt(i))];
+            char c = text.charAt(i);
+            w += c <= LAST ? this.advance[glyphOf(c)] : extraGlyph(c).advance;
         }
         return w + tracking * (text.length() - 1);
     }
@@ -273,7 +448,7 @@ final class LiquidFont {
     /* A fallback string is placed by the game font's own cap height, not this
        sheet's, so it sits on the same centre line as the Latin text. */
     private float capHeightFor(String text) {
-        return this.ok && (text == null || latin(text)) ? this.capHeight : 7.0F * fallbackScale();
+        return this.ok && (text == null || drawable(text)) ? this.capHeight : 7.0F * fallbackScale();
     }
 
     /** Draws with the cap height centred on {@code cy}; returns the width drawn. */
@@ -305,7 +480,7 @@ final class LiquidFont {
         if (a <= 0.003F) {
             return width(text, tracking);
         }
-        if (!this.ok || !latin(text)) {
+        if (!drawable(text)) {
             float s = fallbackScale();
             GL11.glPushMatrix();
             GL11.glTranslatef(x, baseline - 7.0F * s, 0.0F);
@@ -319,7 +494,15 @@ final class LiquidFont {
         GlStateManager.enableBlend();
         GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GlStateManager.disableAlpha();
-        GlStateManager.bindTexture(this.texture.getGlTextureId());
+        /* Built before the first glBegin: building one uploads to a texture. */
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c > LAST) {
+                extraGlyph(c);
+            }
+        }
+        int bound = this.texture.getGlTextureId();
+        GlStateManager.bindTexture(bound);
         GlStateManager.color(((colour >> 16) & 0xFF) / 255.0F, ((colour >> 8) & 0xFF) / 255.0F,
                 (colour & 0xFF) / 255.0F, a);
         /* Snapped to the pixel grid, so a glyph texel lands on one screen
@@ -328,7 +511,39 @@ final class LiquidFont {
         float base = Math.round(baseline * this.scale) / (float) this.scale;
         GL11.glBegin(GL11.GL_QUADS);
         for (int i = 0; i < text.length(); i++) {
-            int c = glyphOf(text.charAt(i));
+            char ch = text.charAt(i);
+            if (ch > LAST) {
+                Glyph glyph = this.extra.get(ch);
+                if (glyph != null && glyph.visible) {
+                    if (glyph.texture != bound) {
+                        GL11.glEnd();
+                        bound = glyph.texture;
+                        GlStateManager.bindTexture(bound);
+                        GL11.glBegin(GL11.GL_QUADS);
+                    }
+                    float gx = pen + glyph.offsetX;
+                    float gy = base + glyph.offsetY;
+                    float gx2 = gx + glyph.width;
+                    float gy2 = gy + glyph.height;
+                    GL11.glTexCoord2f(glyph.u0, glyph.v0);
+                    GL11.glVertex2f(gx, gy);
+                    GL11.glTexCoord2f(glyph.u0, glyph.v1);
+                    GL11.glVertex2f(gx, gy2);
+                    GL11.glTexCoord2f(glyph.u1, glyph.v1);
+                    GL11.glVertex2f(gx2, gy2);
+                    GL11.glTexCoord2f(glyph.u1, glyph.v0);
+                    GL11.glVertex2f(gx2, gy);
+                }
+                pen += (glyph != null ? glyph.advance : 0.0F) + tracking;
+                continue;
+            }
+            int c = glyphOf(ch);
+            if (bound != this.texture.getGlTextureId()) {
+                GL11.glEnd();
+                bound = this.texture.getGlTextureId();
+                GlStateManager.bindTexture(bound);
+                GL11.glBegin(GL11.GL_QUADS);
+            }
             if (this.present[c]) {
                 float gx = pen + this.offsetX[c];
                 float gy = base + this.offsetY[c];

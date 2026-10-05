@@ -109,6 +109,8 @@ public class BlurShader {
 
     public static void renderBlur(float radius, float x, float y, float w, float h, float effectiveScale) {
         if (radius <= 0) return;
+        /* Framebuffers off (OptiFine Fast Render): no blur rather than a white screen (2026-10-05). */
+        if (!myau.util.render.FramebufferCompat.available()) return;
 
         ensureFramebuffers();
         ShaderUtil s = ensureShader();

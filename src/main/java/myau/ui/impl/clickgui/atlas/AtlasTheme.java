@@ -41,6 +41,8 @@ final class AtlasTheme {
     static final String[] ACCENTS = {"ClickGUI", "Sky", "Mint", "Violet", "Rose", "Amber", "Coral", "Ice", "Custom"};
     private static final int[] ACCENT_COLOURS = {0, 0xFF4FC3F7, 0xFF5FFFC1, 0xFFA78BFA, 0xFFFF6B9D,
             0xFFFFC857, 0xFFFF8A65, 0xFFB3E5FC, 0};
+    /** The glass colour in light mode. */
+    private static final int LIGHT_TINT = 0xFFF3F5F9;
     static final String[] TINTS = {"Midnight", "Graphite", "Ocean", "Aurora", "Ember", "Forest", "Custom"};
     private static final int[] TINT_COLOURS = {0xFF0E121D, 0xFF121316, 0xFF08182A, 0xFF1A1030,
             0xFF24120C, 0xFF0B1A12, 0};
@@ -49,11 +51,13 @@ final class AtlasTheme {
             "Google-Sans.ttf", "nunito.ttf", "harmonyOS_Sans.ttf", null};
 
     // ---- Colors
+    /* Dark or light, for this menu and for the HUD (2026-10-05). Shared with the HUD through myau.ui.UiMode. */
+    final ModeProperty mode = new ModeProperty("appearance-mode", 0, new String[]{"Dark", "Light"});
     final ModeProperty accent = new ModeProperty("accent", 0, ACCENTS);
     final IntProperty accentHue = new IntProperty("accent-hue", 200, 0, 360, () -> this.accent.getValue() == 8);
     final PercentProperty accentSaturation = new PercentProperty("accent-saturation", 70, 0, 100,
             () -> this.accent.getValue() == 8);
-    final ModeProperty tint = new ModeProperty("glass-tint", 0, TINTS);
+    final ModeProperty tint = new ModeProperty("glass-tint", 1, TINTS);
     final IntProperty tintHue = new IntProperty("tint-hue", 225, 0, 360, () -> this.tint.getValue() == 6);
     final PercentProperty opacity = new PercentProperty("glass-opacity", 42, 0, 90, null);
 
@@ -122,7 +126,7 @@ final class AtlasTheme {
                         + "Setting names stay as they are: they are the config keys.",
                 this.language);
         group("Colors", "The accent that marks what is on and selected, and the colour of the glass itself.",
-                this.accent, this.accentHue, this.accentSaturation, this.tint, this.tintHue, this.opacity);
+                this.mode, this.accent, this.accentHue, this.accentSaturation, this.tint, this.tintHue, this.opacity);
         group("Glass", "The window's material: how much it blurs and bends the world behind it, and how "
                         + "light catches its edge.",
                 this.blur, this.saturation, this.brightness, this.refraction, this.bezel, this.clearEdge,
@@ -201,11 +205,28 @@ final class AtlasTheme {
     }
 
     Liquid.Style pane() {
-        int alpha = Math.round(this.opacity.getValue() / 100.0F * 255.0F);
+        boolean light = isLight();
+        /* Light glass needs more body than dark: dark text over a thin pane
+           loses to whatever bright thing is behind it. */
+        int percent = light ? Math.max(this.opacity.getValue(), 72) : this.opacity.getValue();
+        int alpha = Math.round(percent / 100.0F * 255.0F);
+        int base = light ? LIGHT_TINT : tintBase();
+        float brightness = this.brightness.getValue() / 100.0F;
+        if (light) {
+            brightness = Math.max(1.12F, brightness);
+        }
         return new Liquid.Style(this.bezel.getValue(), 26.0F * this.refraction.getValue() / 100.0F,
                 this.dispersion.getValue() / 100.0F, this.saturation.getValue() / 100.0F,
-                this.brightness.getValue() / 100.0F, (alpha << 24) | (tintBase() & 0x00FFFFFF),
+                brightness, (alpha << 24) | (base & 0x00FFFFFF),
                 this.edgeLight.getValue() / 100.0F, 0.10F, this.clearEdge.getValue() / 100.0F);
+    }
+
+    boolean isLight() {
+        return this.mode.getValue() == 1;
+    }
+
+    void toggleMode() {
+        this.mode.setValue(isLight() ? 0 : 1);
     }
 
     Liquid.Style pill(int accent, float shown) {
@@ -275,9 +296,11 @@ final class AtlasTheme {
     // ---- presets ------------------------------------------------------
 
     void reset() {
+        int keepMode = this.mode.getValue();
         for (Property<?> property : all()) {
             resetOne(property);
         }
+        this.mode.setValue(keepMode);
     }
 
     @SuppressWarnings("unchecked")

@@ -1,5 +1,8 @@
 package myau.module.modules;
 
+import myau.ui.UiMode;
+import myau.ui.hud.HudLayout;
+
 import java.awt.Color;
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
@@ -89,6 +92,7 @@ public class Statistics extends Module {
 
         this.dragging.scale.x = width;
         this.dragging.scale.y = height;
+        HudLayout.report("Statistics", "Session stats", x, y, width, height, HudLayout.drag(this.dragging));
 
         HUD hud = (HUD) Myau.moduleManager.modules.get(HUD.class);
         boolean shaders = hud != null && hud.shaders.getValue();
@@ -100,7 +104,7 @@ public class Statistics extends Module {
         }
 
         Color c1 = applyOpacity(getAccentColor(), 0.8f);
-        RoundedUtils.drawRoundOutline(x, y, width, height, 6, 1.0f, new Color(0, 0, 0, 100), c1);
+        RoundedUtils.drawRoundOutline(x, y, width, height, 6, 1.0f, UiMode.adapt(new Color(0, 0, 0, 100)), c1);
 
         CFontRenderer font18 = FontProcess.getFont("sans");
 
@@ -119,18 +123,18 @@ public class Statistics extends Module {
                 timeString,
                 x + width / 2F - font18.getStringWidth(timeString) / 2F,
                 (float) (y + padding + 19),
-                new Color(255, 255, 255, 200).getRGB());
+                UiMode.adapt(new Color(255, 255, 255, 200).getRGB()));
 
         // Kills & Wins
         String killsText = "kills " + killCount;
         String winsText = "wins " + wins;
         font18.drawString(
-                killsText, x + 25, (float) (y + padding + 32), new Color(255, 255, 255, 200).getRGB());
+                killsText, x + 25, (float) (y + padding + 32), UiMode.adapt(new Color(255, 255, 255, 200).getRGB()));
         font18.drawString(
                 winsText,
                 x + width - 25 - font18.getStringWidth(winsText),
                 (float) (y + padding + 32),
-                new Color(255, 255, 255, 200).getRGB());
+                UiMode.adapt(new Color(255, 255, 255, 200).getRGB()));
     }
 
     private Color applyOpacity(Color color, float alpha) {

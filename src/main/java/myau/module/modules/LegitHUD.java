@@ -1,5 +1,8 @@
 package myau.module.modules;
 
+import myau.ui.UiMode;
+import myau.ui.hud.HudLayout;
+
 import myau.event.EventTarget;
 import myau.events.LeftClickMouseEvent;
 import myau.events.Render2DEvent;
@@ -58,39 +61,45 @@ public class LegitHUD extends Module {
 
     @EventTarget
     public void onRender2D(Render2DEvent event) {
-        if (!this.isEnabled() || mc.thePlayer == null || mc.theWorld == null || mc.currentScreen != null) return;
+        if (!this.isEnabled() || mc.thePlayer == null || mc.theWorld == null
+                || (mc.currentScreen != null && !HudLayout.isEditing())) return;
 
         ScaledResolution resolution = new ScaledResolution(mc);
         int screenWidth = resolution.getScaledWidth();
         int screenHeight = resolution.getScaledHeight();
         int textX = Math.min(this.x.getValue(), Math.max(0, screenWidth - 120));
         int textY = Math.min(this.y.getValue(), Math.max(0, screenHeight - 20));
-        int color = this.textColor.getValue();
+        int color = UiMode.adapt(this.textColor.getValue());
         int lineHeight = mc.fontRendererObj.FONT_HEIGHT + 3;
         int row = 0;
+        int widest = 0;
 
         if (this.showCoordinates.getValue()) {
             String coordinates = String.format("XYZ: %d %d %d",
                     MathHelper.floor_double(mc.thePlayer.posX),
                     MathHelper.floor_double(mc.thePlayer.getEntityBoundingBox().minY),
                     MathHelper.floor_double(mc.thePlayer.posZ));
-            drawRow(coordinates, textX, textY + row++ * lineHeight, color);
+            widest = Math.max(widest, drawRow(coordinates, textX, textY + row++ * lineHeight, color));
         }
         if (this.showFps.getValue()) {
-            drawRow("FPS: " + Minecraft.getDebugFPS(), textX, textY + row++ * lineHeight, color);
+            widest = Math.max(widest, drawRow("FPS: " + Minecraft.getDebugFPS(), textX, textY + row++ * lineHeight, color));
         }
         if (this.showPing.getValue()) {
             int ping = Ping.own();
-            drawRow("Ping: " + (ping < 0 ? "--" : ping + " ms"), textX, textY + row++ * lineHeight, color);
+            widest = Math.max(widest, drawRow("Ping: " + (ping < 0 ? "--" : ping + " ms"), textX, textY + row++ * lineHeight, color));
         }
         if (this.showCps.getValue()) {
             long now = System.currentTimeMillis();
             prune(this.leftClicks, now);
             prune(this.rightClicks, now);
-            drawRow("CPS: L " + this.leftClicks.size() + "  R " + this.rightClicks.size(),
-                    textX, textY + row * lineHeight, color);
+            widest = Math.max(widest, drawRow("CPS: L " + this.leftClicks.size() + "  R " + this.rightClicks.size(),
+                    textX, textY + row++ * lineHeight, color));
         }
 
+        if (row > 0) {
+            HudLayout.report("LegitHUD.info", "LegitHUD", textX - 3, textY - 2, widest + 6,
+                    row * lineHeight + 1, HudLayout.ints(this.x, 1, this.y, 1));
+        }
         if (this.showKeystrokes.getValue()) {
             drawKeystrokes(this.keysX.getValue(), this.keysY.getValue(), screenWidth, screenHeight, color);
         }
@@ -102,12 +111,13 @@ public class LegitHUD extends Module {
         this.rightClicks.clear();
     }
 
-    private void drawRow(String text, int x, int y, int color) {
+    private int drawRow(String text, int x, int y, int color) {
         if (this.background.getValue()) {
             Gui.drawRect(x - 3, y - 2, x + mc.fontRendererObj.getStringWidth(text) + 3,
-                    y + mc.fontRendererObj.FONT_HEIGHT + 2, 0x70000000);
+                    y + mc.fontRendererObj.FONT_HEIGHT + 2, UiMode.adapt(0x70000000));
         }
         mc.fontRendererObj.drawStringWithShadow(text, x, y, color);
+        return mc.fontRendererObj.getStringWidth(text);
     }
 
     private void drawKeystrokes(int x, int y, int screenWidth, int screenHeight, int color) {
@@ -115,6 +125,8 @@ public class LegitHUD extends Module {
         int gap = 2;
         int left = Math.min(x, Math.max(0, screenWidth - box * 3 - gap * 2));
         int top = Math.min(y, Math.max(0, screenHeight - box * 4 - gap * 3));
+        HudLayout.report("LegitHUD.keys", "Keystrokes", left, top, box * 3 + gap * 2, box * 4 + gap * 3,
+                HudLayout.ints(this.keysX, 1, this.keysY, 1));
         drawKey("W", left + box + gap, top, mc.gameSettings.keyBindForward.isKeyDown(), color);
         drawKey("A", left, top + box + gap, mc.gameSettings.keyBindLeft.isKeyDown(), color);
         drawKey("S", left + box + gap, top + box + gap, mc.gameSettings.keyBindBack.isKeyDown(), color);
@@ -131,11 +143,11 @@ public class LegitHUD extends Module {
     }
 
     private void drawKey(String label, int x, int y, boolean down, int color, int width) {
-        int fill = down ? (color & 0x55FFFFFF) | 0xA0000000 : 0x70000000;
+        int fill = down ? (color & 0x55FFFFFF) | 0xA0000000 : UiMode.adapt(0x70000000);
         Gui.drawRect(x, y, x + width, y + 20, fill);
         int labelWidth = mc.fontRendererObj.getStringWidth(label);
         mc.fontRendererObj.drawStringWithShadow(label, x + (width - labelWidth) / 2,
-                y + 6, down ? color : 0xFFE0E0E0);
+                y + 6, down ? color : UiMode.adapt(0xFFE0E0E0));
     }
 
     private static void prune(Deque<Long> clicks, long now) {

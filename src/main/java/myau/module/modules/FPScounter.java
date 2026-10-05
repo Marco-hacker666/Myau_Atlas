@@ -8,6 +8,8 @@
  */
 package myau.module.modules;
 
+import myau.ui.hud.HudLayout;
+
 import java.awt.Color;
 import myau.event.EventTarget;
 import myau.events.Render2DEvent;
@@ -83,6 +85,8 @@ public class FPScounter
         int textHeight = mc.fontRendererObj.FONT_HEIGHT;
         float w = textWidth + 12;
         float h = textHeight + 6;
+        HudLayout.report("FPScounter", "FPS counter", baseX - w * scaleFactor / 2.0f, baseY - h * scaleFactor / 2.0f,
+                w * scaleFactor, h * scaleFactor, HudLayout.ints(this.offsetX, 1, this.offsetY, 1));
         float radius = ((Integer)this.cornerRadius.getValue()).intValue();
         GlStateManager.pushMatrix();
         GlStateManager.scale(scaleFactor, scaleFactor, 1.0f);

@@ -1,5 +1,8 @@
 package myau.module.modules;
 
+import myau.ui.UiMode;
+import myau.ui.hud.HudLayout;
+
 import myau.Myau;
 import net.minecraft.client.Minecraft;
 import myau.event.EventTarget;
@@ -41,11 +44,13 @@ public class WaterMark2 extends Module {
         float rectRight = startX + textWidth + (padX);
         float rectBottom = startY + textHeight + (padY);
 
+        HudLayout.report("WaterMark2", "WaterMark2", startX, startY, rectRight - startX, rectBottom - startY,
+                HudLayout.ints(this.rectLeft, 1, this.rectTop, 1));
         float radius = 4.0f;
 
         HUD hud = (HUD) Myau.moduleManager.modules.get(HUD.class);
 
-        int fillColor = 0x80000000;
+        int fillColor = UiMode.adapt(0x80000000);
         int hudColor = hud.getColor(System.currentTimeMillis()).getRGB();
 
         RenderUtil.drawRoundedGradientOutlinedRectangle(

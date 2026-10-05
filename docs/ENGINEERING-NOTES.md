@@ -2977,3 +2977,161 @@ holds run 4-8 times past `delay`. The quickest confirmation is a session with Fa
 - The user attributes the damage cut to using Clutch to build bridges heavily, which is usage and not a defect.
 - **No fix wanted.** FakeLag's long holds are recorded above for reference only; do not change FakeLag on the
   strength of this session.
+
+## Public GitHub release folder (2026-10-04, ~22:00)
+
+**User:** wants the project open-sourced on GitHub. The release is a **separate folder**,
+`../OpenMyau-Plus-release`. This working tree is not touched.
+
+**Not copied:**
+- `build/`, `.gradle/`, `.vscode/`, `run/`, `logs/`, `reports/`, `backups/`;
+- the empty `FETCH_HEAD`/`git` files;
+- `docs/tools/carve_embedded_jar.py`, which extracts a jar from a commercial client's DLL.
+
+**Anonymised:**
+- Account names → `Player1-3`. Nicks → `Nick1-2`. Other players' names → `Opponent1-6`.
+- `<home>...` paths → `<home>`/`<instance>`.
+- Local reference-client folders → `<reference clients>`.
+- The notes' "Vape reference" how-to was replaced by a short "Third-party references" paragraph.
+- MatchChat comment and test names are anonymised too, and the tests still pass.
+
+**Modules:**
+- AdvancedAim and KillAura "Advanced" were first left out (Rise-derived). The user then decided to keep them ("學來的不是抄襲，是參考借鑑").
+- So all modules are identical to this tree.
+
+**State of the release folder:**
+- New README (fork credit, GPL-3.0, usage disclaimer, zh/en). `.gitignore` also excludes local data.
+- Builds; **254 tests pass**.
+- `git init -b main` with 1043 files staged and **no commit yet**. There is no git identity on this machine, and the
+  author should be the user's GitHub noreply address, so it waits for their username.
+- **Pushed** 2026-10-04 to https://github.com/Marco-hacker666/Myau_Atlas (renamed from Myau_Atalas; branch main, commit 6cebe25, then dba7ad7 adding Atlas screenshots; description and topics set by the user), author Marco-hacker666 noreply. Future updates: change the working tree, re-copy into the release folder, re-run the anonymisation, then commit and push from there.
+
+## GitHub release v1.0.0 prepared (2026-10-04, ~22:35)
+
+- Asset: `../release-assets/Myau-Atlas-v1.0.0.jar`.
+  - Rebuilt from the release folder at commit dba7ad7. 254 tests pass, 62 mixin classes.
+  - sha256 `74738a121b08399f8e4721e57e5e3e2c448b766846d53c11c4de0b018853fe4c`.
+- Tag `v1.0.0` on `main`. The user creates the release on github.com; tag, title and notes were given in chat.
+
+## Atlas UI port: paused half-way (2026-10-05, ~23:40)
+
+**User:** another AI made `mods/Myau_Atlas_UI_ported.jar` (md5 ec36f1a7). It added:
+- a HUD editor (`myau.ui.hud.HudLayout` / `HudEditorScreen`);
+- a Light/Dark mode (`myau.ui.UiMode`);
+- Legit groups;
+- 13 ported modules: InventoryHUD, PotionHUD, ClosestPlayerHUD, PlayerList, FKCounter, TNTTimer, DamageTags, ItemTags,
+  KeyStrokes, Notifications, BedPlates, EntityCulling, ExploitFixer.
+
+The user asked for a fix: the new HUDs are not found by the HUD editor. **No source was provided.** The
+`Myau-Atlas-jar__1_.zip` from the Desktop holds an older jar (cca24283), also without source.
+
+**What was found:**
+- Compared with our 00f0895a build, only 15 classes differ; everything else is byte-identical. So the other AI worked
+  from our source.
+- **`Myau.class` was bytecode-patched.** `modules.put(Scaffold…)` became `PortRegistry.put(…)`, and that hook adds the 13
+  modules. There is no source equivalent.
+- **Root cause of the bug:** existing HUDs call `HudLayout.report(id, label, x, y, w, h, mover)` every frame they
+  draw. `HudLayout.visible()` returns only elements reported in the last 250 ms, so the editor shows what is being
+  drawn right now. The 13 new modules never call `report`, so the editor cannot see them.
+- **UiMode persistence is not a bug:**
+  - `appearance-mode` is a property in AtlasTheme's Colors group. AtlasTheme autosaves it to
+    `config/Myau/atlas-theme.json` (snapshot every 250 ms, written 500 ms after a change, and on close).
+  - `UiMode.setLight` only mirrors it at runtime. `UiMode.load()` reads it once for HUDs drawn before the menu opens.
+  - The user's file already has `"appearance-mode": "Dark"`.
+
+**Done so far (ported into our source by hand, from the CFR diff of the two builds):**
+- ArmorHUD, EffectsHUD, FPScounter, Hotbar, DynamicIsland, LegitHUD, Statistics, WaterMark, WaterMark2 and HUD
+  (module list): the `HudLayout.report` calls, `offset-x/-y` where added, and the `UiMode.adapt` colours.
+- AtlasTheme: `appearance-mode`, `LIGHT_TINT`, light pane, `isLight`/`toggleMode`, and `reset` keeping the mode.
+
+**Stopped:** copying the 17 new classes (decompiled from the other AI's jar) into `src/` was refused by the
+session's safety classifier as untrusted-code integration. It now waits for the user's decision. Also not done:
+- the AtlasClickGui changes;
+- the Myau/ModuleCategories registration;
+- the HUD fix itself.
+
+**State:** `src/` does **not build** right now. The ported modules reference `myau.ui.UiMode` / `myau.ui.hud.HudLayout`,
+which are not in `src/` yet. The clean source is `backups/src/src-before-atlas-ui-port-20261005`. Other backups:
+`backups/jars/Myau_Atlas_UI_ported.jar.pre-atlas-ui-port-20261005` and
+`backups/jars/Myau-Atlas-jar__1_.zip.received-20261005`. Nothing was installed. mods/ still has the other AI's jar.
+
+## Atlas UI update from source; ArmorHUD lighting, CJK font, Fast Render (2026-10-05, ~23:55)
+
+**Supersedes the "paused half-way" section above.** The user then provided `Myau_Atlas_source_2026-10-05.zip`
+(Desktop):
+- `1_ui_update/` holds the other AI's real Java source for its 16 UI files, plus `atlas-ui.patch`.
+- `2_port/` holds its bytecode tools.
+- `3_github_build/build.yml`.
+- Its README says the 13 extra modules were moved in as **compiled OpenSkid classes** with no source.
+  `Myau.class`/`ModuleCategories` were bytecode-patched (`PortRegistry`).
+
+**What was done:**
+1. My hand-port was reverted (src equalled `backups/src/src-before-atlas-ui-port-20261005` again).
+2. `git apply atlas-ui.patch` was applied cleanly. It adds `myau/ui/UiMode`, `myau/ui/hud/HudLayout`,
+   `myau/ui/hud/HudEditorScreen` and `atlas/LegitGroups`, and modifies AtlasClickGui, AtlasTheme, LegitHUD,
+   ArmorHUD, EffectsHUD, WaterMark(2), FPScounter, Hotbar, DynamicIsland, Statistics and HUD.
+   - Scanned first for Runtime/ProcessBuilder/URL/Socket/file writes: none.
+   - It builds, and the 254 tests pass.
+3. **ArmorHUD lighting leak (user: chat turned dark/tinted when the boots came off).**
+   - `renderItemOverlayIntoGUI` turns GL lighting back **on** after drawing a durability bar. ArmorHUD drew each
+     piece with no item-lighting bracket, so a damaged last piece left lighting on for everything drawn
+     afterwards, the chat included.
+   - With boots on, the last piece was undamaged boots, whose `renderItemIntoGUI` ends with `disableLighting`.
+     Taking them off made the damaged leggings last.
+   - This bug predates the UI update.
+   - Fix: draw the backgrounds first, then the items inside `RenderHelper.enableGUIStandardItemLighting()` /
+     `disableStandardItemLighting()` (as the vanilla hotbar does), restoring rescale-normal, alpha, blend and colour
+     in a `finally`, then draw the durability text.
+   - Hotbar and RenderUtil already bracket correctly.
+4. **Chinese text quality in Atlas (LiquidFont).**
+   - Non-Latin-1 strings used to be drawn whole with the game's 16-px unicode bitmaps at a fractional scale, which
+     came out jagged and broken.
+   - Now characters beyond Latin-1 are rasterised one at a time on first use from the bundled
+     `NotoSansSC-Regular.ttf`. They use the same size×scale, hints and alpha lift as the Latin sheet, and go into
+     1024² pages that grow as needed.
+   - Uploads go through `TextureUtil.uploadTextureMipmap(..., blur=true)`, and pages start cleared. Drawing rebinds
+     between pages and the Latin sheet outside `glBegin/glEnd`.
+   - A string with a character neither face has (an emoji, a surrogate pair) still falls back to the game font
+     (`drawable()`).
+   - Checked offline: the font renders traditional characters (攻擊…標) cleanly.
+5. **OptiFine "Fast Render" → white screen.**
+   - OptiFine reports framebuffers as unavailable with Fast Render (and antialiasing), so `bindFramebuffer` does
+     nothing. The blur/glass passes then draw their full-screen quads straight onto the screen.
+   - Liquid checked `isFramebufferEnabled()` only once, at shader compile time.
+   - New `util/render/FramebufferCompat.available()` checks, every frame: shaders supported,
+     `isFramebufferEnabled()`, and not `GameSettings.ofFastRender` (by reflection; false without OptiFine).
+   - Gated:
+     - `Liquid.beginFrame`: no copies, so the plain glass is used.
+     - `BlurUtils.prepareBlur/prepareBloom`: colour writes off until the matching end, so the caller's mask never
+       reaches the screen, and the blur is skipped.
+     - `BlurShader.renderBlur` (TargetHUD): skipped.
+   - **Not testable here:** no OptiFine in this instance.
+6. **UiMode persistence: not a bug.** `appearance-mode` is saved by AtlasTheme's autosave.
+7. **HudLayout design reviewed and kept.**
+   - The 250 ms "seen" window means "being drawn now". Disabled HUDs and world changes drop out within 250 ms.
+   - Elements are keyed by id, so there are no duplicates.
+   - HUDs with nothing to show report a placeholder while editing (ArmorHUD, EffectsHUD), so opening the editor
+     before a HUD has drawn cannot NPE (`visible()` only returns reported elements).
+
+**Not done: the 13 OpenSkid modules.**
+- They exist only as compiled classes in the other AI's jar.
+- GPL-3.0 source exists at https://github.com/loloshelly102-a11y/OpenSkid (`src/main/java/openskid/module/modules/`;
+  all 13 files are present).
+- Downloading it into the project was refused **twice** by the session's safety classifier (untrusted code
+  integration), the second time after the user's explicit go-ahead. It needs the user to allow it in their Claude
+  Code permission settings, or to download the files themselves.
+- All 13 were **disabled** in the user's config. Their settings are preserved in
+  `backups/config/default.json.pre-ui-fixes-install-20261005`.
+
+**Installed** (game closed): `mods/Myau+.jar-2.1+4.jar` md5 68d8475f, one Myau jar, 62 mixin classes. 254 tests pass.
+- The other AI's jar was removed from mods/. It is kept as `backups/jars/Myau_Atlas_UI_ported.jar.pre-atlas-ui-port-20261005`
+  (ec36f1a7).
+- Backups: `backups/src/src-before-openskid-port-20261005` (= the installed source),
+  `backups/jars/Myau+.jar-2.1+4.jar.ui-fixes-no-openskid-68d8475f`.
+
+**CHANGELOG:**
+- Atlas UI update: compact header, HUD Editor, Light/Dark mode, Legit groups, cross-page search.
+- Fix: ArmorHUD no longer leaves GL lighting on, which had darkened the chat after a damaged last armour piece.
+- Fix: Chinese and other non-Latin text in Atlas is drawn with Noto Sans SC instead of scaled unicode bitmaps.
+- Fix: blur and glass effects fall back to plain drawing when framebuffers are unavailable (OptiFine Fast Render),
+  instead of whitening the screen.

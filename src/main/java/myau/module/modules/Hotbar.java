@@ -1,5 +1,9 @@
 package myau.module.modules;
 
+import myau.ui.UiMode;
+import myau.ui.hud.HudLayout;
+import myau.property.properties.IntProperty;
+
 import myau.event.EventTarget;
 import myau.events.Render2DEvent;
 import myau.module.Module;
@@ -20,6 +24,9 @@ public class Hotbar extends Module {
 
     private AnimationUtil animationUtil;
     private int lastSlot = -1;
+    /* Added with the HUD editor (2026-10-05): drag it there, or set it here. 0 keeps the original place. */
+    public final IntProperty offsetX = new IntProperty("offset-x", 0, -1000, 1000);
+    public final IntProperty offsetY = new IntProperty("offset-y", 0, -1000, 1000);
 
     public Hotbar() {
         super("Hotbar", true, false, "Custom Hotbar rendering");
@@ -42,8 +49,10 @@ public class Hotbar extends Module {
 
         float width = 182;
         float height = 22;
-        float startX = middleX - width / 2.0f;
-        float startY = bottomY - height - 2;
+        float startX = middleX - width / 2.0f + this.offsetX.getValue();
+        float startY = bottomY - height - 2 + this.offsetY.getValue();
+        HudLayout.report("Hotbar", "Hotbar", startX, startY, width, height,
+                HudLayout.ints(this.offsetX, 1, this.offsetY, 1));
         
         // Draw Glassmorphic Background
         if (RenderFixes.shouldUseShaders()) {
@@ -52,7 +61,7 @@ public class Hotbar extends Module {
             BlurUtils.blurEnd(2, 4.0F);
         }
 
-        Color backgroundColor = new Color(15, 15, 15, 100);
+        Color backgroundColor = UiMode.adapt(new Color(15, 15, 15, 100));
         ThemeStyle widget = ThemeStyle.active(WidgetColors.class);
         if (widget != null) {
             backgroundColor = widget.fill(backgroundColor, null, 0);
@@ -78,7 +87,7 @@ public class Hotbar extends Module {
         float highlightX = (float) animationUtil.getValue();
 
         // Draw Selection Highlight
-        Color highlightColor = new Color(255, 255, 255, 60);
+        Color highlightColor = UiMode.adapt(new Color(255, 255, 255, 60));
         if (widget != null) {
             /* The selection in the theme colour, a little stronger than the bar under it. */
             Color themed = widget.color(highlightColor, null, currentItem);
