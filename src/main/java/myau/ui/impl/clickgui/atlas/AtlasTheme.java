@@ -38,14 +38,14 @@ final class AtlasTheme {
 
     private static final File FILE = new File("./config/Myau/atlas-theme.json");
 
-    static final String[] ACCENTS = {"ClickGUI", "Sky", "Mint", "Violet", "Rose", "Amber", "Coral", "Ice", "Custom"};
+    static final String[] ACCENTS = {"ClickGUI", "Sky", "Mint", "Violet", "Rose", "Amber", "Coral", "Ice", "Custom", "Lime"};
     private static final int[] ACCENT_COLOURS = {0, 0xFF4FC3F7, 0xFF5FFFC1, 0xFFA78BFA, 0xFFFF6B9D,
-            0xFFFFC857, 0xFFFF8A65, 0xFFB3E5FC, 0};
+            0xFFFFC857, 0xFFFF8A65, 0xFFB3E5FC, 0, 0xFFC6FF00};
     /** The glass colour in light mode. */
     private static final int LIGHT_TINT = 0xFFF3F5F9;
-    static final String[] TINTS = {"Midnight", "Graphite", "Ocean", "Aurora", "Ember", "Forest", "Custom"};
+    static final String[] TINTS = {"Midnight", "Graphite", "Ocean", "Aurora", "Ember", "Forest", "Custom", "Void"};
     private static final int[] TINT_COLOURS = {0xFF0E121D, 0xFF121316, 0xFF08182A, 0xFF1A1030,
-            0xFF24120C, 0xFF0B1A12, 0};
+            0xFF24120C, 0xFF0B1A12, 0, 0xFF07080A};
     static final String[] FONTS = {"SF Pro", "Product Sans", "Google Sans", "Nunito", "HarmonyOS", "Minecraft"};
     private static final String[] FONT_FILES = {"San-Francisco-Pro-Fonts.ttf", "product_sans_regular.ttf",
             "Google-Sans.ttf", "nunito.ttf", "harmonyOS_Sans.ttf", null};
@@ -87,6 +87,12 @@ final class AtlasTheme {
     final PercentProperty selectionLight = new PercentProperty("selection-light", 75, 0, 100,
             () -> this.selection.getValue() == 0);
 
+    // ---- Cosmos (2026-10-06): the banner's space behind the window
+    final BooleanProperty cosmos = new BooleanProperty("cosmos-background", true);
+    final PercentProperty stars = new PercentProperty("stars", 60, 0, 100, this.cosmos::getValue);
+    final BooleanProperty comets = new BooleanProperty("comets", true, this.cosmos::getValue);
+    final BooleanProperty planet = new BooleanProperty("planet", true, this.cosmos::getValue);
+
     // ---- Motion
     final BooleanProperty animations = new BooleanProperty("animations", true);
     final PercentProperty speed = new PercentProperty("speed", 100, 50, 200, this.animations::getValue);
@@ -115,7 +121,7 @@ final class AtlasTheme {
     final Map<String, List<Property<?>>> groups = new LinkedHashMap<String, List<Property<?>>>();
     final Map<String, String> descriptions = new LinkedHashMap<String, String>();
 
-    static final String[] PRESETS = {"Liquid", "Frost", "Crystal", "Solid", "Neon"};
+    static final String[] PRESETS = {"Cosmos", "Liquid", "Frost", "Crystal", "Solid", "Neon"};
 
     private String saved = "";
     private long changedAt;
@@ -135,6 +141,8 @@ final class AtlasTheme {
                 this.shadow, this.shadowSize, this.dim);
         group("Selection", "The droplet of glass that marks the selected category and module.",
                 this.selection, this.selectionTint, this.selectionRefraction, this.selectionLight);
+        group("Cosmos", "Space behind the window, like the Myau Atlas banner: stars, comets and a ringed planet.",
+                this.cosmos, this.stars, this.comets, this.planet);
         group("Motion", "The springs everything moves on: how fast, how much it overshoots, how much it "
                         + "stretches while moving.",
                 this.animations, this.speed, this.bounce, this.jelly, this.opening, this.smoothScroll);
@@ -345,6 +353,16 @@ final class AtlasTheme {
             this.selection.setValue(1);
             this.selectionTint.setValue(20);
             this.dim.setValue(55);
+        } else if ("Cosmos".equals(preset)) {
+            /* The banner: black glass, a lime accent, the space behind on. */
+            this.accent.setValue(9);
+            this.tint.setValue(7);
+            this.opacity.setValue(62);
+            this.saturation.setValue(110);
+            this.sheen.setValue(25);
+            this.dim.setValue(70);
+            this.selectionTint.setValue(16);
+            this.cosmos.setValue(true);
         } else if ("Neon".equals(preset)) {
             this.accent.setValue(3);
             this.tint.setValue(3);

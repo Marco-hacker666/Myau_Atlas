@@ -53,7 +53,7 @@ public class HUD extends Module {
     private static final Set<Class<?>> RENDER_MODULES = new HashSet<>(Arrays.<Class<?>>asList(
             ESP.class, Chams.class, FullBright.class, Tracers.class, NameTags.class, Xray.class,
             TargetESP.class, TargetHUD.class, Indicators.class, BedESP.class, ItemESP.class,
-            ViewClip.class, NoHurtCam.class, HUD.class, GuiModule.class, RiseClickGUIModule.class,
+            ViewClip.class, NoHurtCam.class, HUD.class, GuiModule.class,
             ChestESP.class, Trajectories.class, Radar.class, RenderFixes.class, FPScounter.class,
             WaterMark.class, WaterMark2.class, HitParticleEffects.class, DynamicIsland.class,
             ArmorHUD.class, EffectsHUD.class, LegitHUD.class,

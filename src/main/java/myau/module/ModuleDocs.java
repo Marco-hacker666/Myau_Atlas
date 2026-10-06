@@ -355,7 +355,6 @@ public final class ModuleDocs {
         // ------------------------------------------------------------ CLIENT
         d("ClickGUIModule", "點擊選單的樣式設定：外觀、顏色、視窗大小。");
         d("GuiModule", "開啟點擊選單（預設右 Shift）。");
-        d("RiseClickGUIModule", "Rise 風格的點擊選單。");
         d("FlagDetector", "偵測伺服器的拉回、方塊被退回、傷害被減，並推斷是哪個模組造成的。");
         d("FlagResponder", "某個模組一直被伺服器拉回時，自動把它關掉。");
         d("HitCheck", "統計哪幾刀真的有打到，並解釋沒打到的原因。");
@@ -433,11 +432,11 @@ public final class ModuleDocs {
                 h("物品", "auto-switch", "switch-back", "only-on-depletion", "pause-autoclicker"),
                 h("其他", "disable-after", "log"));
         g("Scaffold",
-                h("轉頭", "rotations", "telly-*", "move-fix"),
+                h("轉頭", "rotations", "turn-speed", "humanize", "telly-*", "move-fix"),
                 h("移動", "sprint", "ground-motion", "air-motion", "speed-motion", "safe-walk", "eagle",
                         "edge-distance", "sneak-delay", "blocks-per-sneak"),
                 h("疊高與高度", "tower", "hypixeltower", "keep-y", "keep-y-on-press", "no-keep-y-on-jump-potion"),
-                h("放置", "safe", "safe-delay-ticks", "multi-place", "swing", "item-spoof"),
+                h("放置", "pause-on-correction", "safe", "safe-delay-ticks", "multi-place", "swing", "item-spoof"),
                 h("顯示", "block-counter", "outline-esp", "outline-color"));
         g("Velocity",
                 h("模式與比例", "mode", "chance", "horizontal", "vertical", "explosions-horizontal",
@@ -659,6 +658,9 @@ public final class ModuleDocs {
         help(cl, "rotation-random", "隨機程度（點擊位置的分散範圍）。");
         help(cl, "speed", "每 tick 最少轉幾度。");
         help(cl, "max-speed", "每 tick 最多轉幾度。");
+        help("Scaffold", "turn-speed", "每 tick 最多轉幾度（DEFAULT～Hypixel 模式）。不再一次甩到位，轉不到就等下一 tick，不會亂點。180 = 不限制。");
+        help("Scaffold", "humanize", "轉頭加上 Rotations 引擎的速度隨機與弧線，比較像人手。");
+        help("Scaffold", "pause-on-correction", "被伺服器拉回後，等一個來回延遲再放方塊；被退回的方塊也會暫停。避免在錯的位置連續放出 ghost block。");
         help(cl, "pre-aim", "還沒到時機前先把頭轉到大概的位置，等一下轉比較少。");
         help(cl, "counter-knockback", "被打飛時往回走，抵銷一部分擊退。");
         help(cl, "auto-ladder", "接不到方塊時嘗試放梯子。");

@@ -3176,3 +3176,164 @@ present. The user's config still holds the 13 modules' entries; all are off, as 
 - `backups/src/src-before-openskid-port-20261005`, `backups/src/src-after-openskid-port-20261005`.
 
 **GitHub:** not pushed, per the user. The release folder's local commit 1f42f94 predates this port.
+
+## 2026-10-06 — ClickGUI cleanup: only Atlas and Normal; the Myau Atlas logo in the Atlas header
+
+**What changed**
+- Removed the click-menu styles Raven B3 (`myau.ui.ClickGui` with `ui/components`, `ui/dataset`, `ui/callback`,
+  `ui/Component`), Raven B4 (`clickgui/raven`), Cheadle, Modern, RiseLB (`clickgui/riselb`) and the separate
+  Rise v6 menu (`clickgui/rise` + the `RiseClickGUI` module). Only **Atlas** and **Normal** (kept as the backup)
+  remain.
+- `ClickGUIModule.style` is now `{"Normal", "Atlas"}`, default **Atlas**. The style is saved by *name*
+  (`ModeProperty.write` stores the mode string), so a config that says "Atlas" or "Normal" keeps its choice and one
+  naming a removed style falls back to Atlas. `ClickGUIModule.isClickGui(screen)` replaces the long instanceof chains.
+- The `RiseClickGUI` entry left in an old config is simply not loaded any more (no module of that name).
+- `AutoAnduril` and `InvWalk` had checks for `myau.ui.ClickGui` (Raven B3 only). They are removed; behaviour in
+  Atlas and Normal is unchanged (neither ever matched them). InvWalk's `click-gui` setting is therefore inert:
+  Normal moves the player itself while it is open (`ClickGuiScreen.handleInvWalk`), Atlas never did.
+- References cleaned up in `Myau`, `ModuleCategories`, `ModuleDocs`/`ModuleDocsEn`, `HUD`, `Panic`, `Adaptive`.
+- Atlas header: the accent bead and "Myau+ Atlas" were replaced by the Myau Atlas logo
+  (`assets/myau/assets/atlas-logo.png`, 64 px, drawn 18 GUI px with linear filtering, faded with `Liquid.alpha`)
+  and **MYAU** (text colour) + **ATLAS** (lime `#C6FF00` in dark mode, `#5E8000` in light mode for contrast) —
+  the style of the README banner. The logo source is `branding/atlas-logo-lime.svg` outside the project.
+
+**Checks**: Gradle build, 254 tests pass; jar has 62 mixin classes and none of the removed packages.
+Backups: `backups/src/src-before-gui-cleanup-20261006`, `…-after-…`, `backups/jars/Myau+UI_fixed.jar.pre-gui-cleanup-20261006`,
+`backups/config/default.json.pre-gui-cleanup-20261006`.
+
+## 2026-10-06 (later) — Atlas logo fix and the "Cosmos" look
+
+**Logo showed the missing-texture checkerboard.** The header drew `new ResourceLocation("myau", "assets/atlas-logo.png")`
+through the TextureManager, but this mod's assets are not in the game's resource packs, so nothing was found. Now the
+PNG is read with `getResourceAsStream` and uploaded once as a `DynamicTexture` (`getDynamicTextureLocation`), the same
+way WaterMark loads its pictures. **Rule for future pictures in this client: load from the jar, never by plain
+ResourceLocation.**
+
+**Cosmos** (`atlas/Cosmos.java`), the README banner's style behind the Atlas window, drawn in screen space after the
+world dim and before the window (so the glass blurs it):
+- up to 170 stars from a fixed seed (the same sky each time), twinkling; 1 in 6 tinted with the accent;
+- up to 3 comets from the top / right edge heading down-left, 1.7 s each, 1.2–4.7 s apart, tail of 12 fading segments;
+- a planet in the lower right with a tilted ring (far half behind, near half in front) and a moon riding the ring
+  (hidden while behind the planet), plus a small far planet top-left.
+Settings (Appearance → Cosmos, saved in `atlas-theme.json`): `cosmos-background` (on), `stars` 60 %, `comets`, `planet`.
+New colours: accent **Lime** `#C6FF00` (index 9, after Custom so Custom stays 8), tint **Void** `#07080A` (index 7).
+New preset **Cosmos**: Lime + Void, opacity 62, saturation 110, sheen 25, world dim 70, selection tint 16.
+The user's `atlas-theme.json` was switched to these values (game closed; backup
+`backups/config/atlas-theme.json.pre-cosmos-20261006`); their other settings were kept.
+
+Build + 254 tests pass, 62 mixins, installed md5 215f545f. Backup of sources: `backups/src/src-after-cosmos-20261006`.
+
+### 2026-10-06 — Cosmos planet, more detailed
+The planet got: a three-layer halo that breathes (0.8 rad/s), cloud bands along the ring's tilt (lines cut to the
+chord so they stay inside the disc), a day/night shade (`rectH` to 62 % black on the right), a two-part atmosphere
+edge, a highlight where the light lands, three rings with gaps that are brighter on the lit side and thinner behind,
+a moon with its own glow, and a four-pointed glint on the lit limb. The far planet has a halo and night side; the
+brightest stars glow. Liquid already multiplies every colour by `Liquid.alpha`, so the extra `alpha` passed in Cosmos
+only makes the fade-in a little faster. Previous version: `backups/src/Cosmos.java.pre-planet-art-20261006`.
+
+### 2026-10-06 — Cosmos v3: a rendered planet ("it looks fake and nothing moves")
+User screenshot of v2: the rings were chains of `Liquid.line` segments whose round caps overlapped, so every joint
+doubled the alpha and the ring read as beads; the cloud bands were flat grey pills; the edge was a hard lime outline;
+almost nothing moved. Rewritten (`Cosmos.java`):
+- **Planet disc rendered per pixel** into a 160 px `DynamicTexture`, at most every 40 ms: sphere normal per pixel,
+  light from the upper left with a smoothstep terminator, rim atmosphere scattering in the accent, a specular spot,
+  1-px antialiased edge. The surface is a 512×256 cloud map built once from 3-D value-noise fBm sampled on a cylinder
+  (so it wraps) — latitude bands warped by noise plus fine turbulence — coloured by a 256-entry palette from near
+  black to the (slightly whitened) accent. **It rotates, with differential rotation** (equator faster than poles).
+- **Rings**: smooth GL triangle strips (34 radial slices × 90 steps per half), density profile with two gaps and soft
+  edges, lit side brighter, a slow shimmer travelling round, the near half dimmed where it lies in the planet's
+  shadow. Far half before the disc, near half after.
+- **Dust**: 170 specks distributed by ring density, orbiting at Keplerian speed (ω ∝ r^-1.5), twinkling.
+- Moon outside the rings with a day/night side; comet tails and the glint are tapered strips (no beads);
+  stars drift slowly left with parallax by size.
+- Plain-GL helpers `begin()/end()` set SRC_ALPHA blending, smooth shading, no texture/alpha test/cull, and restore.
+  Vertex alphas include `Liquid.alpha`.
+- Checked offline before installing: the disc and ring maths were copied into a standalone Java2D preview
+  (`backups/src/Prev.java`, output `branding/planet-preview.png`).
+Backups: v2 `backups/src/Cosmos.java.pre-planet-art-20261006`, v3 `backups/src/Cosmos.java.v3-rendered-planet-20261006`.
+Installed (game closed, checked with a gating PowerShell step): md5 b27faf80, 62 mixins, 254 tests. Previous jar: backups/jars/Myau+UI_fixed.jar.pre-cosmos-v3-20261006.
+
+## 2026-10-06 — Scaffold rebuilt on Clutch's placement discipline (reference: LiquidBounce nextgen ModuleScaffold)
+
+**Reports** (from the user, "many people"): too many flags, ghost blocks, setbacks / refused blocks, unnatural turning,
+in every setup. The logs hold 49 REJECTs and several LAGBACK x3–x7 blamed on Scaffold. The user's config: GODBIRGDE,
+move-fix SILENT, eagle on, tower NONE, keep-y NONE, multi-place off.
+
+**What was wrong, and the fix (each from Clutch, checked against LiquidBounce's design):**
+1. **The click was made at Priority.HIGH**, checked against `event.getNewYaw()` *at that moment*. A module running later
+   with a higher rotation priority (AutoHeadHitter 6, BedNuker 5) could replace the rotation after the click, so the
+   C08 went out with a look that did not make it. Now the HIGH handler only plans and turns; the click happens in a
+   new `onUpdateClick` at **Priority.LOWEST**, against the final sent look. (LiquidBounce: rotation in
+   RotationUpdateEvent, placement in the tick from `RotationManager.currentRotation`.)
+2. **It clicked only the planned face.** Now, like Clutch `post()` and LiquidBounce's crosshair-target check, it clicks
+   **what the sent look actually hits** (`lookHit`) when that puts a block in the planned cell, or in another cell of the
+   same layer under the player (current box swept by this tick's motion). Support must be solid and not interactable.
+3. **Ghost blocks: a C08 for a placement the game refuses.** `onPlayerRightClick` sends the C08 whatever it answers;
+   when the client would not place (cell taken, an entity in the way) the server may still place from where it has the
+   player. `place()` now checks `ItemBlock.canPlaceBlockOnSide` (which includes the entity-collision check) first, and a
+   face answered false is skipped for 10 ticks.
+4. **Clicking through setbacks and refusals.** `onPacket` (network thread, hand-over only): S08 → pause clicks for a
+   round trip + 1 (`pause-on-correction`, on); S23 air on a block this placed → refused → pause a round trip, ×3 after
+   three refusals in 40 ticks. Placed cells are remembered 100 ticks.
+5. **Snapping.** For DEFAULT…Hypixel the sent look now steps toward the target through `RotationEngine` at
+   `turn-speed` (80°/tick default, 180 = old behaviour) with `humanize` (NOISE + CURVE), from the last reported look,
+   then onto the mouse grid; a step equal to the last placement's yaw step is nudged by one mouse count (Grim
+   DuplicateRotPlace, `PlaceRotations.wouldDuplicate`, as Clutch does). SNAP/SNAP2/3FMC (snap by design) and towering
+   are unchanged. Because the click is verified against the sent look, a slower turn means a click waits, never a wrong
+   click.
+Not changed: tower VANILLA/EXTRA/TELLY set motion directly (prediction ACs flag that by nature); multi-place stays off
+by default; NONE mode keeps its planned click. Vanilla already drops sprint when the remapped forward input is < 0.8.
+New settings documented (zh/en): `turn-speed`, `humanize`, `pause-on-correction`.
+Build + 254 tests pass. Backups: `backups/src/src-before-scaffold-clutch-logic-20261006`, `…-after-…`,
+`backups/config/default.json.pre-scaffold-clutch-logic-20261006`. **Not installed yet: the game was running.**
+**Installed** (game closed, gated check): md5 ff7ba658, 62 mixins, one Myau jar. Replaced jar: backups/jars/Myau+UI_fixed.jar.pre-scaffold-clutch-logic-20261006.
+
+### 2026-10-06 22:11 — first test: REJECT x4 and one Grim "Simulation" (.0298) on test.ccbluex.net
+The place log showed the refused clicks judged along the **last sent** look: `rot 70.1 | ray miss` on the first one
+(Scaffold had just turned 70° and clicked in the same tick), `ray side:up` on the next. The server judges a 1.8
+placement with the rotation it already has — the place log has always assumed so, and Clutch's safe-mode exists for it.
+**Fix:** `onUpdateClick` verifies and clicks along `event.getYaw()/getPitch()` (the last reported look) for every
+turning mode; on a tick that clicks, the rotation and the movement yaw are **held** at that look
+(`setRotation`/`setPervRotation` at HOLD_PRIORITY 8, above Clutch's 7), so the packet after the click carries the
+same look and movement is simulated with the same yaw (one source of a Simulation mismatch removed; the single .0298
+came at the 70° turn as Scaffold switched on). Turning ticks and clicking ticks now alternate when a turn is needed;
+a held look that still lands on a wanted cell keeps clicking. Built md5 a5b2f520; not installed while the game ran.
+**Installed** (game closed, gated check): md5 a5b2f520, 62 mixins. Replaced jar: backups/jars/Myau+UI_fixed.jar.pre-scaffold-held-look-20261006.
+
+### 2026-10-06 22:15 — second test: no REJECTs, but Grim "Simulation" .005–.19 (vl 51) + "GroundSpoof claimed true"
+Every place-log line was `ray face` (the held-look fix works: zero REJECTs). The Simulation flags came only while
+bridging **on the ground**, none while towering. Cause: Scaffold's `safe-walk` was a **silent clamp at the edge**
+(SafeWalkEvent without sneaking) — Grim simulates the edge stop only for a crouching player, so each clamp was a
+movement it could not explain (and an onGround it disputed). The old, faster placement reached edges less often; the
+turn-then-click version reached them constantly. Older logs (10-04) show the same family mixed with RotationPlace,
+AirLiquidPlace and MultiPlace.
+**Fix (LiquidBounce's Ledge feature):** `safe-walk` now **crouches** for real when, on the ground, two ticks of the
+current motion would leave nothing underneath (`atLedge`): `movementInput.sneak = true`, input ×0.3 (vanilla's own
+sneak scaling, applied after the SILENT strafe remap). The silent clamp is gone; `onSafeWalk` only confirms vanilla's
+crouch behaviour. Default `turn-speed` raised 80 → 120 so fewer ticks are spent turning.
+Build + 254 tests. **Installed** (game closed, gated): md5 4b0ba41b, 62 mixins. Replaced jar:
+`backups/jars/Myau+UI_fixed.jar.pre-scaffold-ledge-20261006`.
+
+### 2026-10-06 — "LiquidBounce doesn't get slower": stabilized aim
+The user pointed out LiquidBounce does not slow down. It doesn't because its aim is **stable** (Normal technique,
+RotationMode STABILIZED): while bridging the look barely moves, so the look the server already has keeps hitting the
+next face, every tick can click, and its Ledge crouch only fires when the rotation is not ready. Ours re-aimed at the
+best point of each new block (minimising the turn from the last *target*), so the look kept moving, a turning tick came
+before most clicks, and the player reached edges and crouched.
+**Fix:** (1) for the turning modes, when `lookHit` says the last reported look already puts a block in a wanted cell,
+that look is kept (no turn this tick); (2) face points are chosen by the least turn from the **sent** look, so a needed
+turn is as small as possible; (3) "wanted" cells include where the player will be over the next three ticks of motion
+(LiquidBounce plans from the predicted position). Built md5 a93c25ef; not installed — the game was running.
+**Installed** (game closed, gated): md5 a93c25ef. Rollback candidates: pre-scaffold-held-look (ff7ba658, first Scaffold change) and pre-scaffold-clutch-logic (Scaffold before today's work).
+
+### 2026-10-06 22:22 — rolled back to the first Scaffold change (ff7ba658), at the user's word
+Test of a93c25ef: the player walked off the edge of a y68 bridge (last block 250,68,183, next at y62). The user had
+said beforehand to return to the version before "超爛" if this one was not as expected. The source of Scaffold.java and
+ModuleDocs/ModuleDocsEn was rebuilt to that version (before-backup + `scaffold_edit.py` + the LOWEST comment + docs)
+and checked: its Scaffold*/ModuleDocs* classes are **byte-identical** to those in
+`backups/jars/Myau+UI_fixed.jar.pre-scaffold-held-look-20261006` (md5 ff7ba658). That jar is what gets installed.
+Kept for later: the held-look / ledge-crouch / stabilized source in `backups/src/src-scaffold-stabilized-a93c25ef-20261006`
+(zero REJECTs measured with the held look; the ledge crouch and stabilized aim did not hold the edge).
+Open problem in ff7ba658: same-tick turn+click is judged along the old look (REJECT `ray miss`), and the silent
+safe-walk clamp gives Grim Simulation/GroundSpoof on edges.
+**Installed rollback** (game closed, gated): md5 ff7ba658, 62 mixins, one Myau jar. Replaced a93c25ef kept as backups/jars/Myau+UI_fixed.jar.a93c25ef-stabilized-20261006.

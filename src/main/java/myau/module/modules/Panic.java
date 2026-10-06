@@ -63,7 +63,7 @@ public class Panic extends Module {
      * what the panic is about.
      */
     private static final String[] KEEP = {
-            "Panic", "ClickGUI", "ClickGui", "RiseClickGUI", "HUD",
+            "Panic", "ClickGUI", "ClickGui", "HUD",
             "Debug", "FlagDetector", "FlagResponder", "HitCheck", "PacketLogger",
             "ServerFingerprint", "ServerProfiles", "Statistics", "Adaptive", "AutoTune",
             "LatencyCrosshair", "TargetHUD", "TargetESP", "ESP", "ESP2D", "Chams",
@@ -203,8 +203,9 @@ public class Panic extends Module {
      *
      * A module has two: the one it registers itself under and the one its
      * class is called, and in this client they frequently differ --
-     * ClickGUIModule registers as "ClickGUI", GuiModule as "ClickGui",
-     * RiseClickGUIModule as "RiseClickGUI". The first version of this list was
+     * ClickGUIModule registers as "ClickGUI", GuiModule as "ClickGui" (and,
+     * until it was removed on 2026-10-06, RiseClickGUIModule as "RiseClickGUI").
+     * The first version of this list was
      * written by reading the file names, so all three of those entries matched
      * nothing and the first real panic switched off the menu. Which is a
      * particularly bad thing for a panic to do, since the menu is how anything

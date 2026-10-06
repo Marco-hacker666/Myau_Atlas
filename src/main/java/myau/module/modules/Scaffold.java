@@ -6,6 +6,7 @@ import myau.event.EventTarget;
 import myau.event.types.EventType;
 import myau.event.types.Priority;
 import myau.events.*;
+import myau.management.PlaceRotations;
 import myau.management.RotationState;
 import myau.module.Module;
 import myau.property.properties.BooleanProperty;
@@ -20,7 +21,11 @@ import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemBlock;
+import net.minecraft.init.Blocks;
 import net.minecraft.item.ItemStack;
+import net.minecraft.network.Packet;
+import net.minecraft.network.play.server.S08PacketPlayerPosLook;
+import net.minecraft.network.play.server.S23PacketBlockChange;
 import net.minecraft.network.play.client.C0APacketAnimation;
 import net.minecraft.potion.Potion;
 import net.minecraft.util.*;
@@ -31,6 +36,10 @@ import org.lwjgl.opengl.GL11;
 
 import java.awt.*;
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -122,6 +131,40 @@ public class Scaffold extends Module {
     public final ModeProperty espColor = new ModeProperty("outline-color", 0, new String[]{"Default", "HUD"}, () -> this.espOutline.getValue());
     private final Map<BlockPos, Long> espHighlight = new HashMap<>();
 
+    /* ---- Clutch's discipline, applied to Scaffold (2026-10-06) ----------
+       Players reported flags, ghost blocks, setbacks and refused blocks.
+       Clutch already does what fixes those (see its header):
+       - the click is the one the sent look makes, decided after every module
+         has set this tick's rotation (Priority.LOWEST), and clicks whatever
+         that look actually hits, if the block goes where it is wanted;
+       - no C08 for a placement the game itself would refuse (a C08 goes out
+         whatever onPlayerRightClick answers, and the server may then place a
+         block the client does not have: a ghost);
+       - a setback or a refused block pauses clicking for a round trip;
+       - the look turns at a limited, humanised speed (LiquidBounce's
+         RotationsValueGroup does the same) instead of snapping, and never
+         repeats the yaw step of the last placement (Grim DuplicateRotPlace). */
+    private static final int[] TURNING_MODES = {1, 2, 3, 4, 5, 6};
+    public final IntProperty turnSpeed = new IntProperty("turn-speed", 80, 10, 180, this::turnLimited);
+    public final BooleanProperty humanize = new BooleanProperty("humanize", true, this::turnLimited);
+    public final BooleanProperty pauseOnCorrection = new BooleanProperty("pause-on-correction", true);
+    private final RotationEngine engine = new RotationEngine();
+    private int tick = 0;
+    private int pauseTicks = 0;
+    private volatile boolean correctionPending = false;
+    private final Map<BlockPos, Integer> placedAt = new ConcurrentHashMap<BlockPos, Integer>();
+    private final ConcurrentLinkedQueue<BlockPos> refused = new ConcurrentLinkedQueue<BlockPos>();
+    private final Map<String, Integer> failedFaces = new HashMap<String, Integer>();
+    private int refusalsAt = -1000;
+    private int recentRefusals = 0;
+    /* This tick's plan, made at HIGH, clicked at LOWEST. */
+    private boolean planReady = false;
+    private BlockData planData = null;
+    private Vec3 planHitVec = null;
+    private boolean planSnapCanPlace = true;
+    private boolean planSnapMode = false;
+    private boolean planThreeFmc = false;
+
     private boolean shouldStopSprint() {
         if (this.isThreeFmcMode() && !this.isThreeFmcTellyMode()) {
             return true;
@@ -132,6 +175,92 @@ public class Scaffold extends Module {
             boolean stage = this.keepY.getValue() == 1 || this.keepY.getValue() == 2 || this.keepY.getValue() == 4;
             return (!stage || this.stage <= 0) && this.sprintMode.getValue() == 0;
         }
+    }
+
+    private boolean turnLimited() {
+        int mode = this.rotationMode.getValue();
+        for (int m : TURNING_MODES) {
+            if (m == mode) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** A round trip in ticks: how long anything the server says takes to be answered. */
+    private int roundTripTicks() {
+        int ping = Ping.own();
+        return ping <= 0 ? 4 : MathHelper.clamp_int((ping + 49) / 50, 2, 8);
+    }
+
+    private static String faceKey(BlockPos support, EnumFacing side) {
+        return support.getX() + "," + support.getY() + "," + support.getZ() + "," + side.ordinal();
+    }
+
+    private boolean faceFailed(BlockPos support, EnumFacing side) {
+        Integer until = this.failedFaces.get(faceKey(support, side));
+        if (until == null) {
+            return false;
+        }
+        if (this.tick >= until) {
+            this.failedFaces.remove(faceKey(support, side));
+            return false;
+        }
+        return true;
+    }
+
+    /** Blocks the server took back: pause for a round trip, longer if it keeps happening. */
+    private void drainRefusals() {
+        BlockPos pos;
+        while ((pos = this.refused.poll()) != null) {
+            if (this.placedAt.remove(pos) == null) {
+                continue;
+            }
+            if (this.tick - this.refusalsAt > 40) {
+                this.recentRefusals = 0;
+            }
+            this.refusalsAt = this.tick;
+            this.recentRefusals++;
+            int pause = this.roundTripTicks() * (this.recentRefusals >= 3 ? 3 : 1);
+            this.pauseTicks = Math.max(this.pauseTicks, pause);
+        }
+        if (!this.placedAt.isEmpty()) {
+            Iterator<Map.Entry<BlockPos, Integer>> it = this.placedAt.entrySet().iterator();
+            while (it.hasNext()) {
+                if (this.tick - it.next().getValue() > 100) {
+                    it.remove();
+                }
+            }
+        }
+    }
+
+    /**
+     * Where the sent look lands, if a click there is one this module wants:
+     * the planned cell, or another cell of the same layer under the player
+     * (where they are, or will be after this tick's motion). Clutch's post()
+     * rule: click what the look hits, not what was planned.
+     */
+    private MovingObjectPosition lookHit(BlockData plan, float yaw, float pitch) {
+        MovingObjectPosition mop = RotationUtil.rayTrace(yaw, pitch, mc.playerController.getBlockReachDistance(), 1.0F);
+        if (mop == null || mop.typeOfHit != MovingObjectType.BLOCK) {
+            return null;
+        }
+        BlockPos support = mop.getBlockPos();
+        if (BlockUtil.isReplaceable(support) || BlockUtil.isInteractable(support)) {
+            return null;
+        }
+        BlockPos cell = support.offset(mop.sideHit);
+        BlockPos planned = plan.blockPos().offset(plan.facing());
+        if (cell.equals(planned)) {
+            return mop;
+        }
+        if (cell.getY() != planned.getY() || !BlockUtil.isReplaceable(cell)) {
+            return null;
+        }
+        AxisAlignedBB box = mc.thePlayer.getEntityBoundingBox().addCoord(mc.thePlayer.motionX, 0.0, mc.thePlayer.motionZ);
+        boolean under = box.minX < cell.getX() + 1 && box.maxX > cell.getX()
+                && box.minZ < cell.getZ() + 1 && box.maxZ > cell.getZ();
+        return under ? mop : null;
     }
 
     private boolean canPlace() {
@@ -271,8 +400,27 @@ public class Scaffold extends Module {
         if (!this.canThreeFmcPlaceNow()) {
             return;
         }
+        if (this.pauseTicks > 0 || this.faceFailed(blockPos, enumFacing)) {
+            /* Waiting out a setback or a refused block: every click sent now is
+               judged from a position or against a block the client does not have. */
+            return;
+        }
         if (ItemUtil.isHoldingBlock() && this.blockCount > 0) {
-            if (mc.playerController.onPlayerRightClick(mc.thePlayer, mc.theWorld, mc.thePlayer.inventory.getCurrentItem(), blockPos, enumFacing, vec3)) {
+            ItemStack held = mc.thePlayer.inventory.getCurrentItem();
+            /* A C08 goes out whatever onPlayerRightClick answers. When the game
+               would not place here (the cell is taken, or the block would be
+               inside an entity), the server may place it anyway from where it
+               has the player: a block the client does not have. */
+            if (held == null || !(held.getItem() instanceof ItemBlock)
+                    || !((ItemBlock) held.getItem()).canPlaceBlockOnSide(mc.theWorld, blockPos, enumFacing, mc.thePlayer, held)) {
+                return;
+            }
+            if (!mc.playerController.onPlayerRightClick(mc.thePlayer, mc.theWorld, held, blockPos, enumFacing, vec3)) {
+                this.failedFaces.put(faceKey(blockPos, enumFacing), this.tick + 10);
+                return;
+            }
+            {
+                this.placedAt.put(blockPos.offset(enumFacing), this.tick);
                 if (mc.playerController.getCurrentGameType() != GameType.CREATIVE) {
                     this.blockCount--;
                 }
@@ -450,6 +598,18 @@ public class Scaffold extends Module {
     public void onUpdate(UpdateEvent event) {
         if (this.isEnabled() && event.getType() == EventType.PRE) {
             this.placedThisTick = false;
+            this.planReady = false;
+            this.tick++;
+            if (this.pauseTicks > 0) {
+                this.pauseTicks--;
+            }
+            if (this.correctionPending) {
+                this.correctionPending = false;
+                if (this.pauseOnCorrection.getValue()) {
+                    this.pauseTicks = Math.max(this.pauseTicks, this.roundTripTicks() + 1);
+                }
+            }
+            this.drainRefusals();
             this.updateThreeFmcState();
             this.quietThreeFmcMovement();
             if (this.safeStuckDelayTicks > 0) {
@@ -751,9 +911,32 @@ public class Scaffold extends Module {
                        0.0096, which is no one's sensitivity. The click is then
                        re-aimed along the rotation actually sent, so the face
                        and the point it claims are the ones that rotation hits. */
+                    if (this.turnLimited() && !towerRotating) {
+                        /* From the look the server has, at most turn-speed a
+                           tick (LiquidBounce: RotationsValueGroup). */
+                        Set<RotationEngine.Feature> features = EnumSet.noneOf(RotationEngine.Feature.class);
+                        if (this.humanize.getValue()) {
+                            features.add(RotationEngine.Feature.NOISE);
+                            features.add(RotationEngine.Feature.CURVE);
+                        }
+                        float speed = this.turnSpeed.getValue();
+                        float[] stepped = this.engine.step(event.getYaw(), event.getPitch(), targetYaw, targetPitch,
+                                speed, Math.max(10.0F, speed * 0.5F), 0, true, features);
+                        targetYaw = stepped[0];
+                        targetPitch = stepped[1];
+                    }
                     float[] onGrid = RotationEngine.quantize(event.getYaw(), event.getPitch(), targetYaw, targetPitch);
                     targetYaw = onGrid[0];
                     targetPitch = onGrid[1];
+                    float turn = Math.abs(MathHelper.wrapAngleTo180_float(targetYaw - event.getYaw()));
+                    for (int guard = 0; guard < 3 && turn > 2.0F && PlaceRotations.wouldDuplicate(targetYaw); guard++) {
+                        /* Grim DuplicateRotPlace: the same yaw step as at the
+                           last judged placement. One mouse count more breaks it. */
+                        double gcd = RotationUtil.gcd();
+                        targetYaw += Math.signum(MathHelper.wrapAngleTo180_float(targetYaw - event.getYaw()))
+                                * (float) (gcd > 0.0 ? gcd : 0.01);
+                        turn = Math.abs(MathHelper.wrapAngleTo180_float(targetYaw - event.getYaw()));
+                    }
                     placeYaw = targetYaw;
                     placePitch = targetPitch;
                     event.setRotation(targetYaw, targetPitch, 3);
@@ -768,92 +951,147 @@ public class Scaffold extends Module {
                         Myau.rotationManager.setRotation(targetYaw, targetPitch, 3, false);
                     }
                 }
-                /* The look this tick's movement packet carries -- ours, or a
-                   higher-priority module's, or the camera's when no mode turned
-                   this tick. The click must be one that look makes: the face it
-                   names and the point it claims, where the ray actually lands.
-                   Until 2026-10-04 only 3FMC checked; every other mode kept the
-                   planned hitVec when the sent look missed the face (towering,
-                   a telly clamp, a snap that did not rotate) and clicked anyway,
-                   which the server judges against the look it has -- Grim
-                   RotationPlace, or the block undone (49 Scaffold REJECTs in the
-                   flag logs). NONE never turns, so it is left as it was. */
-                float sentYaw = event.getNewYaw();
-                float sentPitch = event.getNewPitch();
-                if (this.rotationMode.getValue() != 0 && blockData != null && hitVec != null) {
-                    MovingObjectPosition verifiedMop = this.getPlacementMop(blockData, sentYaw, sentPitch);
-                    hitVec = verifiedMop == null ? null : verifiedMop.hitVec;
-                }
-                if (blockData != null && hitVec != null && snapCanPlace && (this.rotationTick <= 0 || snapAlreadyLooking)) {
-                    this.place(blockData.blockPos(), blockData.facing(), hitVec);
-                    if (snapMode) {
-                        this.rememberSnapRotation();
+                /* The click is made at LOWEST (onUpdateClick), once every
+                   module has set this tick's rotation: the look checked is
+                   then the one the movement packet will really carry. */
+                this.planData = blockData;
+                this.planHitVec = hitVec;
+                this.planSnapCanPlace = snapCanPlace;
+                this.planSnapMode = snapMode;
+                this.planThreeFmc = threeFmcMode;
+                this.planReady = true;
+            }
+        }
+    }
+
+
+    /**
+     * The click for this tick's plan, after every module has set the rotation
+     * (Priority.LOWEST): the look checked is the one the movement packet after
+     * it will carry. Clutch does the same in post().
+     */
+    @EventTarget(Priority.LOWEST)
+    public void onUpdateClick(UpdateEvent event) {
+        if (!this.isEnabled() || event.getType() != EventType.PRE || !this.planReady) {
+            return;
+        }
+        this.planReady = false;
+        BlockData blockData = this.planData;
+        Vec3 hitVec = this.planHitVec;
+        boolean snapCanPlace = this.planSnapCanPlace;
+        boolean snapMode = this.planSnapMode;
+        boolean threeFmcMode = this.planThreeFmc;
+        /* The look this tick's movement packet carries -- ours, or a
+           higher-priority module's, or the camera's when no mode turned
+           this tick. The click must be one that look makes: the face it
+           names and the point it claims, where the ray actually lands.
+           Until 2026-10-04 only 3FMC checked; every other mode kept the
+           planned hitVec when the sent look missed the face (towering,
+           a telly clamp, a snap that did not rotate) and clicked anyway,
+           which the server judges against the look it has -- Grim
+           RotationPlace, or the block undone (49 Scaffold REJECTs in the
+           flag logs). NONE never turns, so it is left as it was.
+           Since 2026-10-06 this runs at LOWEST, after every module's
+           rotation, and the click is wherever that look lands if the block
+           goes somewhere wanted (lookHit), as Clutch's post() does. */
+        float sentYaw = event.getNewYaw();
+        float sentPitch = event.getNewPitch();
+        MovingObjectPosition along = null;
+        if (this.rotationMode.getValue() != 0 && blockData != null && hitVec != null) {
+            along = this.lookHit(blockData, sentYaw, sentPitch);
+            hitVec = along == null ? null : along.hitVec;
+        }
+        if (blockData != null && hitVec != null && snapCanPlace && this.rotationTick <= 0) {
+            if (along != null) {
+                this.place(along.getBlockPos(), along.sideHit, along.hitVec);
+            } else {
+                this.place(blockData.blockPos(), blockData.facing(), hitVec);
+            }
+            if (snapMode) {
+                this.rememberSnapRotation();
+            }
+            if (this.multiplace.getValue() && !snapMode) {
+                for (int i = 0; i < 3; i++) {
+                    blockData = this.getBlockData();
+                    if (blockData == null) {
+                        break;
                     }
-                    if (this.multiplace.getValue() && !snapMode) {
-                        for (int i = 0; i < 3; i++) {
-                            blockData = this.getBlockData();
-                            if (blockData == null) {
-                                break;
-                            }
-                            /* Along the sent look, not this.yaw: that one may be
-                               a clamp or a quantisation away from what went out. */
-                            MovingObjectPosition mop = this.rotationMode.getValue() != 0
-                                    ? this.getPlacementMop(blockData, sentYaw, sentPitch)
-                                    : RotationUtil.rayTrace(this.yaw, this.pitch, mc.playerController.getBlockReachDistance(), 1.0F);
-                            if (mop != null
-                                    && mop.typeOfHit == MovingObjectType.BLOCK
-                                    && mop.getBlockPos().equals(blockData.blockPos())
-                                    && mop.sideHit == blockData.facing()) {
-                                this.place(blockData.blockPos(), blockData.facing(), mop.hitVec);
-                            } else {
-                                /* The rotation that would reach this one is
-                                   never sent: the server would judge the click
-                                   against the rotation it has, which misses.
-                                   Wait for a tick that aims at it. */
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (this.targetFacing != null) {
-                    if (threeFmcMode) {
-                        this.targetFacing = null;
-                    } else if (this.rotationTick <= 0 && !this.placedThisTick) {
-                        int playerBlockX = MathHelper.floor_double(mc.thePlayer.posX);
-                        int playerBlockY = MathHelper.floor_double(mc.thePlayer.posY);
-                        int playerBlockZ = MathHelper.floor_double(mc.thePlayer.posZ);
-                        BlockPos belowPlayer = new BlockPos(playerBlockX, playerBlockY - 1, playerBlockZ);
-                        /* Only a click the sent look makes (2026-10-04): the
-                           face is tower EXTRA's, the hit point where that look
-                           lands on it. BlockUtil.getHitVec placed a point on the
-                           face whatever the look was. NONE keeps the old click. */
-                        if (this.rotationMode.getValue() != 0) {
-                            MovingObjectPosition towerMop = this.getPlacementMop(
-                                    new BlockData(belowPlayer, this.targetFacing), sentYaw, sentPitch);
-                            if (towerMop != null) {
-                                this.place(belowPlayer, this.targetFacing, towerMop.hitVec);
-                            }
-                        } else {
-                            hitVec = BlockUtil.getHitVec(belowPlayer, this.targetFacing, this.yaw, this.pitch);
-                            this.place(belowPlayer, this.targetFacing, hitVec);
-                        }
-                    }
-                    this.targetFacing = null;
-                } else if ((this.keepY.getValue() == 2 || this.keepY.getValue() == 4) && this.stage > 0 && !mc.thePlayer.onGround) {
-                    int nextBlockY = MathHelper.floor_double(mc.thePlayer.posY + mc.thePlayer.motionY);
-                    if (nextBlockY <= this.startY && mc.thePlayer.posY > (double) (this.startY + 1)) {
-                        this.shouldKeepY = true;
-                        blockData = this.getBlockData();
-                        if (blockData != null && this.rotationTick <= 0 && !this.placedThisTick) {
-                            MovingObjectPosition mop = this.rotationMode.getValue() != 0
-                                    ? this.getPlacementMop(blockData, sentYaw, sentPitch)
-                                    : this.getPlacementMop(blockData, this.yaw, this.pitch);
-                            if (mop != null) {
-                                this.place(blockData.blockPos(), blockData.facing(), mop.hitVec);
-                            }
-                        }
+                    /* Along the sent look, not this.yaw: that one may be
+                       a clamp or a quantisation away from what went out. */
+                    MovingObjectPosition mop = this.rotationMode.getValue() != 0
+                            ? this.getPlacementMop(blockData, sentYaw, sentPitch)
+                            : RotationUtil.rayTrace(this.yaw, this.pitch, mc.playerController.getBlockReachDistance(), 1.0F);
+                    if (mop != null
+                            && mop.typeOfHit == MovingObjectType.BLOCK
+                            && mop.getBlockPos().equals(blockData.blockPos())
+                            && mop.sideHit == blockData.facing()) {
+                        this.place(blockData.blockPos(), blockData.facing(), mop.hitVec);
+                    } else {
+                        /* The rotation that would reach this one is
+                           never sent: the server would judge the click
+                           against the rotation it has, which misses.
+                           Wait for a tick that aims at it. */
+                        break;
                     }
                 }
+            }
+        }
+        if (this.targetFacing != null) {
+            if (threeFmcMode) {
+                this.targetFacing = null;
+            } else if (this.rotationTick <= 0 && !this.placedThisTick) {
+                int playerBlockX = MathHelper.floor_double(mc.thePlayer.posX);
+                int playerBlockY = MathHelper.floor_double(mc.thePlayer.posY);
+                int playerBlockZ = MathHelper.floor_double(mc.thePlayer.posZ);
+                BlockPos belowPlayer = new BlockPos(playerBlockX, playerBlockY - 1, playerBlockZ);
+                /* Only a click the sent look makes (2026-10-04): the
+                   face is tower EXTRA's, the hit point where that look
+                   lands on it. BlockUtil.getHitVec placed a point on the
+                   face whatever the look was. NONE keeps the old click. */
+                if (this.rotationMode.getValue() != 0) {
+                    MovingObjectPosition towerMop = this.getPlacementMop(
+                            new BlockData(belowPlayer, this.targetFacing), sentYaw, sentPitch);
+                    if (towerMop != null) {
+                        this.place(belowPlayer, this.targetFacing, towerMop.hitVec);
+                    }
+                } else {
+                    hitVec = BlockUtil.getHitVec(belowPlayer, this.targetFacing, this.yaw, this.pitch);
+                    this.place(belowPlayer, this.targetFacing, hitVec);
+                }
+            }
+            this.targetFacing = null;
+        } else if ((this.keepY.getValue() == 2 || this.keepY.getValue() == 4) && this.stage > 0 && !mc.thePlayer.onGround) {
+            int nextBlockY = MathHelper.floor_double(mc.thePlayer.posY + mc.thePlayer.motionY);
+            if (nextBlockY <= this.startY && mc.thePlayer.posY > (double) (this.startY + 1)) {
+                this.shouldKeepY = true;
+                blockData = this.getBlockData();
+                if (blockData != null && this.rotationTick <= 0 && !this.placedThisTick) {
+                    MovingObjectPosition mop = this.rotationMode.getValue() != 0
+                            ? this.getPlacementMop(blockData, sentYaw, sentPitch)
+                            : this.getPlacementMop(blockData, this.yaw, this.pitch);
+                    if (mop != null) {
+                        this.place(blockData.blockPos(), blockData.facing(), mop.hitVec);
+                    }
+                }
+            }
+        }
+    }
+
+    @EventTarget
+    public void onPacket(PacketEvent event) {
+        if (!this.isEnabled() || event.getType() != EventType.RECEIVE) {
+            return;
+        }
+        /* Network thread: only hand things over. */
+        Packet<?> packet = event.getPacket();
+        if (packet instanceof S08PacketPlayerPosLook) {
+            this.correctionPending = true;
+        } else if (packet instanceof S23PacketBlockChange && !this.placedAt.isEmpty()) {
+            S23PacketBlockChange change = (S23PacketBlockChange) packet;
+            BlockPos pos = change.getBlockPosition();
+            if (pos != null && change.getBlockState() != null
+                    && change.getBlockState().getBlock() == Blocks.air && this.placedAt.containsKey(pos)) {
+                this.refused.add(pos);
             }
         }
     }
@@ -1237,6 +1475,16 @@ public class Scaffold extends Module {
         this.lastSnapPlaceYaw = Float.NaN;
         this.lastSnapPlacePitch = Float.NaN;
         this.espHighlight.clear();
+        this.tick = 0;
+        this.pauseTicks = 0;
+        this.correctionPending = false;
+        this.placedAt.clear();
+        this.refused.clear();
+        this.failedFaces.clear();
+        this.recentRefusals = 0;
+        this.planReady = false;
+        this.planData = null;
+        this.planHitVec = null;
     }
 
     @Override
@@ -1259,6 +1507,9 @@ public class Scaffold extends Module {
         this.threeFmcAirTicks = 0;
         this.threeFmcGroundTicks = 0;
         this.threeFmcPlaceCooldown = 0;
+        this.planReady = false;
+        this.planData = null;
+        this.planHitVec = null;
     }
 
     public int getBlockCount() {

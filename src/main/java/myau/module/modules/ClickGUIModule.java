@@ -5,12 +5,7 @@ import myau.property.properties.BooleanProperty;
 import myau.property.properties.FloatProperty;
 import myau.property.properties.IntProperty;
 import myau.property.properties.ModeProperty;
-import myau.ui.ClickGui;
 import myau.ui.impl.clickgui.normal.ClickGuiScreen;
-import myau.ui.impl.clickgui.modern.ModernClickGui;
-import myau.ui.impl.clickgui.raven.RavenClickGui;
-import myau.ui.impl.clickgui.cheadle.CheadleClickGui;
-import myau.ui.impl.clickgui.riselb.RiseLBClickGui;
 import myau.ui.impl.clickgui.atlas.AtlasClickGui;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
@@ -37,7 +32,10 @@ public class ClickGUIModule extends Module {
     };
 
     public ModeProperty accentColor = new ModeProperty("Color", 0, COLOR_NAMES);
-    public ModeProperty style = new ModeProperty("Style", 4, new String[]{"Normal", "Raven B3", "Raven B4", "Cheadle", "Modern", "RiseLB", "Atlas"});
+    /* Only Atlas and Normal (the backup) are left (2026-10-06): Raven B3/B4,
+       Cheadle, Modern and RiseLB were removed. The style is saved by name, so
+       a config naming one of the removed styles keeps this default, Atlas. */
+    public ModeProperty style = new ModeProperty("Style", 1, new String[]{"Normal", "Atlas"});
     public BooleanProperty saveGuiState = new BooleanProperty("Save GUI State", true);
     public BooleanProperty shadow = new BooleanProperty("Shadow", true);
 
@@ -59,13 +57,7 @@ public class ClickGUIModule extends Module {
     public void openSelectedGui() {
         Minecraft mc = Minecraft.getMinecraft();
         GuiScreen screen = getSelectedGui();
-        this.switchingGuiStyle = mc.currentScreen instanceof ClickGui
-                || mc.currentScreen instanceof ClickGuiScreen
-                || mc.currentScreen instanceof RavenClickGui
-                || mc.currentScreen instanceof CheadleClickGui
-                || mc.currentScreen instanceof ModernClickGui
-                || mc.currentScreen instanceof RiseLBClickGui
-                || mc.currentScreen instanceof AtlasClickGui;
+        this.switchingGuiStyle = isClickGui(mc.currentScreen);
         try {
             mc.displayGuiScreen(screen);
         } finally {
@@ -79,37 +71,21 @@ public class ClickGUIModule extends Module {
 
     public GuiScreen getSelectedGui() {
         if (style.getValue() == 1) {
-            return ClickGui.getInstance();
-        }
-        if (style.getValue() == 2) {
-            RavenClickGui raven = RavenClickGui.getInstance();
-            return raven != null ? raven : new RavenClickGui();
-        }
-        if (style.getValue() == 3) {
-            CheadleClickGui cheadle = CheadleClickGui.getInstance();
-            return cheadle != null ? cheadle : new CheadleClickGui();
-        }
-        if (style.getValue() == 4) {
-            return ModernClickGui.getInstance();
-        }
-        if (style.getValue() == 5) {
-            return RiseLBClickGui.getInstance();
-        }
-        if (style.getValue() == 6) {
             return AtlasClickGui.getInstance();
         }
         return ClickGuiScreen.getInstance();
+    }
+
+    /** Whether the screen is one of the click menus. */
+    public static boolean isClickGui(GuiScreen screen) {
+        return screen instanceof ClickGuiScreen || screen instanceof AtlasClickGui;
     }
 
     @Override
     public void verifyValue(String name) {
         if ("Style".equalsIgnoreCase(name)) {
             Minecraft mc = Minecraft.getMinecraft();
-            if (mc.currentScreen instanceof ClickGui || mc.currentScreen instanceof ClickGuiScreen
-                    || mc.currentScreen instanceof RavenClickGui || mc.currentScreen instanceof CheadleClickGui
-                    || mc.currentScreen instanceof ModernClickGui
-                    || mc.currentScreen instanceof RiseLBClickGui
-                    || mc.currentScreen instanceof AtlasClickGui) {
+            if (isClickGui(mc.currentScreen)) {
                 openSelectedGui();
             }
         }

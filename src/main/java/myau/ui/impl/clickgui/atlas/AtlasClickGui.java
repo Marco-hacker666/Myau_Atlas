@@ -17,6 +17,10 @@ import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.network.NetworkPlayerInfo;
 import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.client.renderer.Tessellator;
+import net.minecraft.client.renderer.WorldRenderer;
+import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
+import net.minecraft.util.ResourceLocation;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.opengl.GL11;
 
@@ -860,6 +864,10 @@ public class AtlasClickGui extends GuiScreen {
                 Liquid.rect(0, 0, sr.getScaledWidth(), sr.getScaledHeight(), 0.0F,
                         alpha(0xFF050810, dim * 0.87F), alpha(0xFF050810, Math.min(1.0F, dim * 1.25F)));
             }
+            if (this.theme.cosmos.getValue()) {
+                Cosmos.draw(sr.getScaledWidth(), sr.getScaledHeight(), accent(), this.theme.stars.getValue() / 100.0F,
+                        this.theme.comets.getValue(), this.theme.planet.getValue(), fade);
+            }
 
             GL11.glTranslatef(this.pivotX, this.pivotY + this.slideY, 0.0F);
             GL11.glScalef(this.viewScale, this.viewScale, 1.0F);
@@ -964,16 +972,66 @@ public class AtlasClickGui extends GuiScreen {
         AtlasInspector.tick();
     }
 
+    /* Read from the jar and uploaded as a dynamic texture, like WaterMark's
+       pictures: the mod's own assets are not in the game's resource packs,
+       so a plain ResourceLocation found nothing and drew the missing-texture
+       checkerboard (seen 2026-10-06). */
+    private static ResourceLocation logo;
+    private static boolean logoTried;
+
+    private static ResourceLocation logo() {
+        if (!logoTried) {
+            logoTried = true;
+            try (java.io.InputStream in = AtlasClickGui.class.getResourceAsStream("/assets/myau/assets/atlas-logo.png")) {
+                if (in != null) {
+                    logo = net.minecraft.client.Minecraft.getMinecraft().getTextureManager().getDynamicTextureLocation(
+                            "myau_atlas_logo",
+                            new net.minecraft.client.renderer.texture.DynamicTexture(javax.imageio.ImageIO.read(in)));
+                }
+            } catch (Exception ignored) {
+                logo = null;
+            }
+        }
+        return logo;
+    }
+
+    /** The logo texture as a square at (x, y), faded with the rest of the menu. */
+    private static void drawLogo(float x, float y, float size) {
+        ResourceLocation texture = logo();
+        if (texture == null) {
+            return;
+        }
+        GlStateManager.enableTexture2D();
+        GlStateManager.enableBlend();
+        GlStateManager.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO);
+        GlStateManager.color(1.0F, 1.0F, 1.0F, Liquid.alpha);
+        net.minecraft.client.Minecraft.getMinecraft().getTextureManager().bindTexture(texture);
+        /* Smoothed: the 64 px picture is drawn at 18 GUI pixels. */
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        Tessellator tessellator = Tessellator.getInstance();
+        WorldRenderer buffer = tessellator.getWorldRenderer();
+        buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_TEX);
+        buffer.pos(x, y + size, 0.0D).tex(0.0D, 1.0D).endVertex();
+        buffer.pos(x + size, y + size, 0.0D).tex(1.0D, 1.0D).endVertex();
+        buffer.pos(x + size, y, 0.0D).tex(1.0D, 0.0D).endVertex();
+        buffer.pos(x, y, 0.0D).tex(0.0D, 0.0D).endVertex();
+        tessellator.draw();
+        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
+    }
+
     private void drawHeader(int x, int y, int width, int sidebar, int detail, float mx, float my) {
         float cy = y + HEADER / 2.0F;
         int accent = accent();
 
-        /* The mark: a bead of the accent colour with light caught on top. */
-        Liquid.shadow(x + 13, cy - 6, x + 25, cy + 6, 6.0F, 5.0F, alpha(accent, 0.55F), 0.0F);
-        Liquid.rect(x + 13, cy - 6, x + 25, cy + 6, 6.0F, accent, darker(accent));
-        Liquid.rect(x + 15, cy - 5, x + 23, cy - 1, 2.5F, 0x8CFFFFFF, 0x00FFFFFF);
-        float brand = font(12.5F, true).draw("Myau+", x + 31, cy, TEXT);
-        float brandEnd = x + 31 + brand + 5 + font(12.5F, false).draw("Atlas", x + 31 + brand + 5, cy, FAINT);
+        /* The mark: the Myau Atlas logo (the A with the orbit) and the name
+           in the banner's style -- MYAU in the text colour, ATLAS in lime
+           (2026-10-06; it was a bead of the accent colour and "Myau+ Atlas"). */
+        Liquid.shadow(x + 11, cy - 9, x + 29, cy + 9, 5.0F, 5.0F, 0x55000000, 0.0F);
+        drawLogo(x + 11, cy - 9, 18.0F);
+        float brand = font(12.5F, true).draw("MYAU", x + 35, cy, TEXT);
+        float brandEnd = x + 35 + brand + 4
+                + font(12.5F, true).draw("ATLAS", x + 35 + brand + 4, cy, myau.ui.UiMode.isLight() ? 0xFF5E8000 : 0xFFC6FF00);
 
         /* One row: the page tabs after the brand, the HUD editor and the
            dark/light switch on the right, and the search box filling the rest. */

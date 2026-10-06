@@ -169,7 +169,6 @@ final class ModuleDocsEn {
         // ------------------------------------------------------------ CLIENT
         d("ClickGUIModule", "Click menu style: look, colours and window size.");
         d("GuiModule", "Opens the click menu (Right Shift by default).");
-        d("RiseClickGUIModule", "A Rise-style click menu.");
         d("FlagDetector", "Detects server corrections, refused blocks and reduced damage, and works out which module caused them.");
         d("FlagResponder", "Switches off a module the server keeps correcting.");
         d("HitCheck", "Counts which swings landed and explains the misses.");
@@ -419,6 +418,9 @@ final class ModuleDocsEn {
         help(cl, "rotation-random", "How random (how far the click spot spreads on the face).");
         help(cl, "speed", "Fewest degrees per tick.");
         help(cl, "max-speed", "Most degrees per tick.");
+        help("Scaffold", "turn-speed", "Most degrees turned per tick (DEFAULT to Hypixel modes). The look no longer snaps; if it is not there yet, the click waits a tick. 180 = no limit.");
+        help("Scaffold", "humanize", "Turns use the Rotations engine's speed variation and curve.");
+        help("Scaffold", "pause-on-correction", "After a setback, wait a round trip before placing; a refused block pauses too. Stops strings of ghost blocks placed from the wrong position.");
         help(cl, "pre-aim", "Turn roughly toward the spot before it is time, so less turning is left.");
         help(cl, "counter-knockback", "Walk back when knocked, cancelling part of the knockback.");
         help(cl, "auto-ladder", "Try a ladder when no block can be placed.");

@@ -496,7 +496,7 @@ public class Adaptive extends Module {
        how the player moves, and switching one off would change something
        unrelated to the evidence. (TargetFilter was the 10:06 dry-run pick.) */
     private static final String[] SETTINGS = {
-            "TargetFilter", "Theme", "GuiModule", "ClickGUIModule", "RiseClickGUIModule", "Debug"
+            "TargetFilter", "Theme", "GuiModule", "ClickGUIModule", "Debug"
     };
 
     static boolean settingsOnly(Module module) {
