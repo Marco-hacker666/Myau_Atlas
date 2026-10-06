@@ -1,3 +1,5 @@
+<p align="center"><img src="images/banner.png" alt="Myau Atlas" width="100%"></p>
+
 # OpenMyau+ (fork)
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/SNPC2TcM8v)
