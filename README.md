@@ -1,5 +1,7 @@
 # OpenMyau+ (fork)
 
+[![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/SNPC2TcM8v)
+
 ![Preview](images/image3.png)
 
 A Minecraft 1.8.9 Forge client, forked from
@@ -41,6 +43,10 @@ changing a module.
 Search, categories, a Legit tab, per-module descriptions and grouped settings with hints.
 Client Settings holds the theme and the language (中文 / English).
 
+## Community
+
+Join the Myau Atlas Discord for downloads, help, bug reports and suggestions: **https://discord.gg/SNPC2TcM8v**
+
 ## Building
 
 Requires JDK 17 to run Gradle (the mod itself targets Java 8).
@@ -66,6 +72,8 @@ Minecraft 1.8.9 Forge 客戶端，fork 自 [IamNespola/OpenMyau-Plus](https://gi
 這個分支重寫、修正了很多模組，並加上用實際遊戲 log 驗證的診斷工具。
 
 > **只在允許的地方使用**：單人、自己的伺服器，或允許這類客戶端的測試伺服器。在禁止的伺服器上使用可能被封號，後果自負。
+
+Discord 社群（下載、問題、回報 bug、建議）：**https://discord.gg/SNPC2TcM8v**
 
 主要內容：
 - **Clutch**：被打下去或掉落時自動放方塊接住。可開 `safe-mode`，大角度轉頭會提早一個 tick，不降低連續放置速度。
