@@ -52,7 +52,8 @@ public final class ModuleCategories {
                 ViewClip.class, Trajectories.class, BlockOverlay.class,
                 BreakProgress.class, Indicators.class, Radar.class, LatencyCrosshair.class,
                 TeamHealthDisplay.class, RenderFixes.class,
-                AntiDebuff.class);
+                AntiDebuff.class, BedPlates.class, TNTTimer.class, DamageTags.class, ItemTags.class,
+                EntityCulling.class);
         put(Category.WORLD,
                 Scaffold.class, AutoBlockIn.class, AutoBedDef.class, AutoHeadHitter.class, BedNuker.class,
                 ChestAura.class, ChestStealer.class, FastPlace.class, SpeedMine.class, Timer.class,
@@ -61,20 +62,21 @@ public final class ModuleCategories {
                 AntiBot.class, TargetFilter.class, MCF.class, NickHider.class, Spammer.class, AutoAuth.class,
                 AutoHypixel.class, BedwarUtils.class, BedTracker.class, LightningTracker.class,
                 ESPDetector.class, AntiCheat.class, AntiObfuscate.class, MouseRawInput.class,
-                ResourceSpoofer.class, NoRotate.class);
+                ResourceSpoofer.class, NoRotate.class, ExploitFixer.class);
         put(Category.EXPLOIT,
                 Disabler.class, GhostHand.class, ClientSpoofer.class);
         put(Category.CLIENT,
                 ClickGUIModule.class, GuiModule.class, RiseClickGUIModule.class, FlagDetector.class,
                 FlagResponder.class, HitCheck.class, FightLog.class, Debug.class, PacketLogger.class,
                 ServerFingerprint.class, AutoTune.class, Adaptive.class, ServerProfiles.class,
-                LatencyGovernor.class, Panic.class, Rotations.class);
+                LatencyGovernor.class, Panic.class, Rotations.class, Notifications.class);
         put(Category.LEGIT,
                 Ambience.class, Animations.class, ArmorHUD.class, AutoRespawn.class, Capes.class,
                 DynamicIsland.class, EffectsHUD.class, FPScounter.class, FreeLook.class, FullBright.class,
                 HUD.class, HitParticleEffects.class, Hotbar.class,
                 ItemPhysics.class, LegitHUD.class, NoHurtCam.class, Sprint.class, Statistics.class, PlayTracker.class,
-                WaterMark.class, WaterMark2.class);
+                WaterMark.class, WaterMark2.class, KeyStrokes.class, PotionHUD.class, InventoryHUD.class,
+                PlayerList.class, ClosestPlayerHUD.class, FKCounter.class);
         /* In the order they appear on screen, not sorted: the order is the point. */
         put(Category.THEME,
                 Theme.class, PlayerColors.class, TracerColors.class, TargetColors.class, BacktrackColors.class,

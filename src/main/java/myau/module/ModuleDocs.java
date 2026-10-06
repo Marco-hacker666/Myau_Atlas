@@ -245,6 +245,20 @@ public final class ModuleDocs {
         d("KeepRange", "連擊中自動放開前進（S-tap），避免貼太近浪費對手的擊退。");
         d("AimBacktrack", "剛好揮空的一刀，改算到前幾個 tick 準心對到的人身上。");
         d("KBDisplacement", "手動打人時，靜默把擊退方向轉向附近的危險（虛空、岩漿）。");
+        // Ported from OpenSkid (2026-10-05)
+        d("KeyStrokes", "在畫面上顯示 WASD、空白鍵和滑鼠按鍵（含 CPS）。可在 HUD 編輯器拖曳。");
+        d("PotionHUD", "在畫面上列出目前的藥水效果和剩餘時間。可在 HUD 編輯器拖曳。");
+        d("InventoryHUD", "在畫面上顯示身上的裝備和快捷欄物品。可在 HUD 編輯器拖曳。");
+        d("PlayerList", "在畫面上顯示自訂的玩家列表（可顯示延遲、排序、篩選模式）。可在 HUD 編輯器拖曳。");
+        d("ClosestPlayerHUD", "顯示每一隊離你最近的玩家：距離、人數、高低差、血量。可在 HUD 編輯器拖曳。");
+        d("FKCounter", "從聊天訊息統計每一隊的最終擊殺數（Final Kill）。可在 HUD 編輯器拖曳。");
+        d("BedPlates", "在床上顯示彩色標示，以及床周圍的防禦方塊。");
+        d("TNTTimer", "在點燃的 TNT 上方顯示倒數秒數。");
+        d("DamageTags", "打到實體時，在它上方飄出傷害數字。");
+        d("ItemTags", "在掉落物上方顯示物品名稱和數量。");
+        d("EntityCulling", "不繪製被擋住、看不到的實體，提高 FPS。");
+        d("Notifications", "右下角顯示動畫通知（模組開關等），可設定開關音效。可在 HUD 編輯器拖曳。");
+        d("ExploitFixer", "擋下你自己送出的異常資料包和聊天封包（防禦用）。");
         d("HitBox", "放大其他實體的碰撞箱，比較容易打中，可選擇顯示放大的範圍。");
         d("LagRange", "對手在範圍內時暫時延遲自己的封包，製造距離優勢。");
         d("NoHitDelay", "移除攻擊後的點擊冷卻（1.8 揮空延遲）。");

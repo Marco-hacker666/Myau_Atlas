@@ -216,6 +216,21 @@ public class Myau {
         moduleManager.modules.put(SafeWalk.class, new SafeWalk());
         moduleManager.modules.put(DynamicIsland.class, new DynamicIsland());
         moduleManager.modules.put(Scaffold.class, new Scaffold());
+        /* Ported from OpenSkid (GPL-3.0), 2026-10-05: registered in source, where the
+           Atlas UI jar had patched Myau.class to do it (PortRegistry). Same place, same order. */
+        moduleManager.modules.put(KeyStrokes.class, new KeyStrokes());
+        moduleManager.modules.put(PotionHUD.class, new PotionHUD());
+        moduleManager.modules.put(InventoryHUD.class, new InventoryHUD());
+        moduleManager.modules.put(PlayerList.class, new PlayerList());
+        moduleManager.modules.put(ClosestPlayerHUD.class, new ClosestPlayerHUD());
+        moduleManager.modules.put(FKCounter.class, new FKCounter());
+        moduleManager.modules.put(BedPlates.class, new BedPlates());
+        moduleManager.modules.put(TNTTimer.class, new TNTTimer());
+        moduleManager.modules.put(DamageTags.class, new DamageTags());
+        moduleManager.modules.put(ItemTags.class, new ItemTags());
+        moduleManager.modules.put(EntityCulling.class, new EntityCulling());
+        moduleManager.modules.put(Notifications.class, new Notifications());
+        moduleManager.modules.put(ExploitFixer.class, new ExploitFixer());
         moduleManager.modules.put(AutoBlockIn.class, new AutoBlockIn());
         moduleManager.modules.put(AntiBot.class, new AntiBot());
         moduleManager.modules.put(AutoBedDef.class, new AutoBedDef());

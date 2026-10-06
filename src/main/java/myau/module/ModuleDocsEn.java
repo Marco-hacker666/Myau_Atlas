@@ -59,6 +59,20 @@ final class ModuleDocsEn {
         d("KeepRange", "Lets go of forward during a combo (S-tap) so you do not walk into the target and waste their knockback.");
         d("AimBacktrack", "A swing that just missed lands on whoever your aim was on a few ticks ago.");
         d("KBDisplacement", "In fights by hand, silently aims your knockback at nearby hazards (void, lava).");
+        // Ported from OpenSkid (2026-10-05)
+        d("KeyStrokes", "Shows WASD, space and the mouse buttons (with CPS) on screen. Movable in the HUD editor.");
+        d("PotionHUD", "Lists your active potion effects and their time left. Movable in the HUD editor.");
+        d("InventoryHUD", "Shows your worn armour and hotbar items on screen. Movable in the HUD editor.");
+        d("PlayerList", "A custom on-screen player list (ping, sorting, game-mode filter). Movable in the HUD editor.");
+        d("ClosestPlayerHUD", "The nearest player of each team: distance, count, height difference, health. Movable in the HUD editor.");
+        d("FKCounter", "Counts final kills per team from the chat. Movable in the HUD editor.");
+        d("BedPlates", "Coloured overlays on beds and the blocks defending them.");
+        d("TNTTimer", "A countdown above primed TNT.");
+        d("DamageTags", "Floating damage numbers above the entities you hit.");
+        d("ItemTags", "Names and counts above dropped items.");
+        d("EntityCulling", "Skips drawing entities that are hidden from view, for more FPS.");
+        d("Notifications", "Animated notifications in the bottom-right corner (module toggles and more), with toggle sounds. Movable in the HUD editor.");
+        d("ExploitFixer", "Blocks malformed payload and chat packets you send (defensive).");
         d("HitBox", "Expands other entities' hitboxes so they are easier to hit; can draw them.");
         d("LagRange", "Delays your packets while a target is in range, for a reach advantage.");
         d("NoHitDelay", "Removes the 1.8 miss-click cooldown.");

@@ -3135,3 +3135,44 @@ which are not in `src/` yet. The clean source is `backups/src/src-before-atlas-u
 - Fix: Chinese and other non-Latin text in Atlas is drawn with Noto Sans SC instead of scaled unicode bitmaps.
 - Fix: blur and glass effects fall back to plain drawing when framebuffers are unavailable (OptiFine Fast Render),
   instead of whitening the screen.
+
+## The 13 OpenSkid modules ported from source; HUD editor support (2026-10-06, ~00:20)
+
+**User:** "你趕快去加回來，我給你開權限了". The download was then allowed.
+
+**Source.**
+- https://github.com/loloshelly102-a11y/OpenSkid (GPL-3.0), `src/main/java/openskid/module/modules/`, main branch:
+  KeyStrokes, PotionHUD, InventoryHUD, PlayerList, ClosestPlayerHUD, FKCounter, BedPlates, TNTTimer, DamageTags,
+  ItemTags, EntityCulling, Notifications, ExploitFixer.
+- Scanned for Runtime/ProcessBuilder/URL/Socket/file writes: none.
+- Ported by renaming the package `openskid` → `myau` and `OpenSkid` → `Myau`. Every other dependency already exists
+  in this tree. Each file has a header naming its origin.
+- **Registration in source:**
+  - `Myau.java`: right after Scaffold, in the same order the bytecode-patched `PortRegistry` used.
+  - `ModuleCategories`: LEGIT for the six screen HUDs, RENDER for BedPlates, TNTTimer, DamageTags, ItemTags and
+    EntityCulling, CLIENT for Notifications, MISC for ExploitFixer.
+  - `ModuleDocs` / `ModuleDocsEn`: descriptions. `ModuleDocsTest` caught their absence.
+
+**HUD editor (the original bug).** Each screen HUD now calls `HudLayout.report` with the rectangle it draws:
+- **KeyStrokes, InventoryHUD, PotionHUD.** Anchored by `position-x/-y` plus `offset-x/-y`. The mover's sign is
+  -1 on the RIGHT/BOTTOM anchors, where a larger offset moves the element left/up.
+- **PlayerList, ClosestPlayerHUD, FKCounter.** Positioned top-left by `offset-x/-y` (0..1000). The box is the
+  background's: -2 px around the text, times scale.
+- **Placeholders while editing.** PotionHUD (no effects), PlayerList (no lines), ClosestPlayerHUD (nobody near) and
+  Notifications (none showing) draw nothing when empty, so while the editor is open they report a placeholder box
+  and draw nothing.
+- **Notifications** had no position settings. It now has `offset-x/-y` (-1000..1000, default 0 = the old
+  bottom-right place), applied to the whole stack. It reports the stack's bounds.
+- **Not in the editor, on purpose:** TNTTimer, DamageTags and ItemTags are world-space labels drawn in
+  Render3DEvent at blocks and entities. BedPlates is world-space too. None has a screen position.
+- InventoryHUD brackets item lighting per slot, so it does not have ArmorHUD's lighting leak.
+
+**Result.** 254 tests pass. **Installed** (game closed): md5 fadec5b7, one Myau jar, 62 mixin classes, all 13 classes
+present. The user's config still holds the 13 modules' entries; all are off, as before.
+
+**Backups:**
+- `backups/jars/Myau+.jar-2.1+4.jar.pre-openskid-port-20261005` (68d8475f).
+- `backups/config/default.json.pre-openskid-port-20261005`.
+- `backups/src/src-before-openskid-port-20261005`, `backups/src/src-after-openskid-port-20261005`.
+
+**GitHub:** not pushed, per the user. The release folder's local commit 1f42f94 predates this port.
