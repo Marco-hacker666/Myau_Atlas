@@ -1,0 +1,252 @@
+diff -ruN orig_copy/src/main/java/myau/Myau.java Myau_Atlas-main/src/main/java/myau/Myau.java
+--- orig_copy/src/main/java/myau/Myau.java	2026-10-07 22:15:15.038760808 +0000
++++ Myau_Atlas-main/src/main/java/myau/Myau.java	2026-10-07 22:15:15.111339499 +0000
+@@ -201,6 +201,7 @@
+         moduleManager.modules.put(Piercing.class, new Piercing());
+         moduleManager.modules.put(BedwarUtils.class, new BedwarUtils());
+         moduleManager.modules.put(NoSlow.class, new NoSlow());
++        moduleManager.modules.put(NoItemRelease.class, new NoItemRelease());
+         moduleManager.modules.put(AutoAuth.class, new AutoAuth());
+         moduleManager.modules.put(Capes.class, new Capes());
+         moduleManager.modules.put(MoveFix.class, new MoveFix());
+diff -ruN orig_copy/src/main/java/myau/mixin/MixinNetworkManager.java Myau_Atlas-main/src/main/java/myau/mixin/MixinNetworkManager.java
+--- orig_copy/src/main/java/myau/mixin/MixinNetworkManager.java	2026-10-07 22:15:15.040933754 +0000
++++ Myau_Atlas-main/src/main/java/myau/mixin/MixinNetworkManager.java	2026-10-07 22:45:39.347470823 +0000
+@@ -6,6 +6,7 @@
+ import myau.event.EventManager;
+ import myau.event.types.EventType;
+ import myau.events.PacketEvent;
++import myau.module.modules.NoItemRelease;
+ import myau.util.ActionLedger;
+ import net.minecraft.network.NetworkManager;
+ import net.minecraft.network.Packet;
+@@ -48,6 +49,7 @@
+     )
+     private void sendPacket(Packet<?> packet, CallbackInfo callbackInfo) {
+         if (!packet.getClass().getName().startsWith("net.minecraft.network.play.server")) {
++            NoItemRelease.claimVanillaRelease(packet);
+             /* Who sent this. The game loop sends movement every tick and says
+                nothing; a module sending an attack, a placement or a dig of its
+                own is exactly what a correction usually needs explaining by, and
+@@ -64,6 +66,10 @@
+             } else if (Myau.playerStateManager != null && Myau.blinkManager != null && Myau.lagManager != null) {
+                 if (!Myau.lagManager.isFlushing()) {
+                     Myau.playerStateManager.handlePacket(packet);
++                    if (NoItemRelease.dropVanillaRelease(packet)) {
++                        callbackInfo.cancel();
++                        return;
++                    }
+                     if (Myau.blinkManager.isBlinking()) {
+                         if (Myau.blinkManager.offerPacket(packet)) {
+                             callbackInfo.cancel();
+diff -ruN orig_copy/src/main/java/myau/mixin/MixinPlayerControllerMP.java Myau_Atlas-main/src/main/java/myau/mixin/MixinPlayerControllerMP.java
+--- orig_copy/src/main/java/myau/mixin/MixinPlayerControllerMP.java	2026-10-07 22:15:15.040949030 +0000
++++ Myau_Atlas-main/src/main/java/myau/mixin/MixinPlayerControllerMP.java	2026-10-07 22:35:00.608534460 +0000
+@@ -4,6 +4,7 @@
+ import myau.events.AttackEvent;
+ import myau.events.CancelUseEvent;
+ import myau.events.WindowClickEvent;
++import myau.module.modules.NoItemRelease;
+ import net.minecraft.client.multiplayer.PlayerControllerMP;
+ import net.minecraft.entity.Entity;
+ import net.minecraft.entity.player.EntityPlayer;
+@@ -54,6 +55,16 @@
+         EventManager.call(event);
+         if (event.isCancelled()) {
+             callbackInfo.cancel();
++        } else {
++            NoItemRelease.beginVanillaRelease();
+         }
+     }
++
++    @Inject(
++            method = {"onStoppedUsingItem"},
++            at = {@At("RETURN")}
++    )
++    private void onStoppedUsingItemDone(CallbackInfo callbackInfo) {
++        NoItemRelease.endVanillaRelease();
++    }
+ }
+diff -ruN orig_copy/src/main/java/myau/module/ModuleCategories.java Myau_Atlas-main/src/main/java/myau/module/ModuleCategories.java
+--- orig_copy/src/main/java/myau/module/ModuleCategories.java	2026-10-07 22:15:15.041155697 +0000
++++ Myau_Atlas-main/src/main/java/myau/module/ModuleCategories.java	2026-10-07 22:15:15.111917495 +0000
+@@ -43,7 +43,7 @@
+                 InvManager.class, Refill.class, AntiAFK.class, AntiFireball.class, AutoAnduril.class,
+                 InventoryClicker.class);
+         put(Category.MOVEMENT,
+-                Fly.class, Speed.class, LongJump.class, Jesus.class, NoSlow.class, NoJumpDelay.class,
++                Fly.class, Speed.class, LongJump.class, Jesus.class, NoSlow.class, NoItemRelease.class, NoJumpDelay.class,
+                 SafeWalk.class, Eagle.class, InvWalk.class, TargetStrafe.class, MoveFix.class,
+                 Stasis.class);
+         put(Category.RENDER,
+diff -ruN orig_copy/src/main/java/myau/module/ModuleDocs.java Myau_Atlas-main/src/main/java/myau/module/ModuleDocs.java
+--- orig_copy/src/main/java/myau/module/ModuleDocs.java	2026-10-07 22:15:15.041166461 +0000
++++ Myau_Atlas-main/src/main/java/myau/module/ModuleDocs.java	2026-10-07 22:35:00.620275541 +0000
+@@ -290,6 +290,7 @@
+         d("LongJump", "跳得更遠。");
+         d("Jesus", "可以在水面上行走。");
+         d("NoSlow", "使用物品（格擋、吃東西、拉弓）時不減速。");
++        d("NoItemRelease", "放開右鍵時，不送出遊戲原本會送的「放開使用物品」封包，本機照常停止使用。可選食物／藥水、劍、或全部（弓與釣竿除外）。其他模組自己送的封包不受影響。");
+         d("NoJumpDelay", "移除連續跳躍之間的延遲。");
+         d("SafeWalk", "走到方塊邊緣時不會掉下去（像一直按著潛行）。");
+         d("Eagle", "走到邊緣時自動潛行，用來後退搭橋。");
+diff -ruN orig_copy/src/main/java/myau/module/ModuleDocsEn.java Myau_Atlas-main/src/main/java/myau/module/ModuleDocsEn.java
+--- orig_copy/src/main/java/myau/module/ModuleDocsEn.java	2026-10-07 22:15:15.041186169 +0000
++++ Myau_Atlas-main/src/main/java/myau/module/ModuleDocsEn.java	2026-10-07 22:35:00.621182140 +0000
+@@ -104,6 +104,7 @@
+         d("LongJump", "Jumps further.");
+         d("Jesus", "Walk on water.");
+         d("NoSlow", "No slowdown while using items (blocking, eating, drawing a bow).");
++        d("NoItemRelease", "When you let go of the use-item key, does not send the release-item packet the game normally sends; the client still stops using the item locally. Mode: consumables, swords or all (bows and rods excluded). Packets that other modules send themselves are not affected.");
+         d("NoJumpDelay", "Removes the delay between consecutive jumps.");
+         d("SafeWalk", "Stops you walking off block edges, as if sneaking.");
+         d("Eagle", "Sneaks automatically at edges, for bridging backwards.");
+diff -ruN orig_copy/src/main/java/myau/module/modules/NoItemRelease.java Myau_Atlas-main/src/main/java/myau/module/modules/NoItemRelease.java
+--- orig_copy/src/main/java/myau/module/modules/NoItemRelease.java	1970-01-01 00:00:00.000000000 +0000
++++ Myau_Atlas-main/src/main/java/myau/module/modules/NoItemRelease.java	2026-10-07 22:45:59.001597805 +0000
+@@ -0,0 +1,145 @@
++package myau.module.modules;
++
++import myau.Myau;
++import myau.event.EventTarget;
++import myau.events.TickEvent;
++import myau.mixin.IAccessorEntityPlayer;
++import myau.module.Module;
++import myau.property.properties.ModeProperty;
++import myau.util.ActionLedger;
++import net.minecraft.client.Minecraft;
++import net.minecraft.item.EnumAction;
++import net.minecraft.item.Item;
++import net.minecraft.item.ItemBow;
++import net.minecraft.item.ItemFishingRod;
++import net.minecraft.item.ItemStack;
++import net.minecraft.network.Packet;
++import net.minecraft.network.play.client.C07PacketPlayerDigging;
++
++/**
++ * Does not send the RELEASE_USE_ITEM packet that the game itself sends when the
++ * use-item key is let go. The client's own item-use handling is left alone.
++ *
++ * The packet is dropped at the very last step of NetworkManager.sendPacket
++ * (MixinNetworkManager), after every PacketEvent listener and after
++ * PlayerStateManager.handlePacket have seen it, and before BlinkManager /
++ * LagManager could hold it. So Atlas's own bookkeeping (PlayerStateManager,
++ * KillAura.blockingState, ...) treats the release as having happened, and only
++ * the server never receives it.
++ *
++ * Which packet: MixinPlayerControllerMP opens a window around the vanilla
++ * PlayerControllerMP.onStoppedUsingItem (beginVanillaRelease / endVanillaRelease);
++ * the body runs unmodified. Inside the window the first RELEASE_USE_ITEM that no
++ * module sent is claimed by instance (claimVanillaRelease, first thing in the send
++ * hook) and only that instance is dropped (dropVanillaRelease). A release that a
++ * module sends itself is never claimed, even from inside the window: NoSlow's Opal
++ * mode sends one from its PacketEvent listener while the window can be open
++ * (a C09 sent by syncCurrentPlayItem triggers it). Direct senders traced
++ * (2026-10-08): NoSlow (NCP, Verus, Opal), KillAura.stopBlock, FastBow (x2).
++ */
++public class NoItemRelease extends Module {
++    private static final Minecraft mc = Minecraft.getMinecraft();
++    private static final String NAME = "NoItemRelease";
++
++    /** True only while a vanilla release this module covers is being carried out. */
++    private static boolean inVanillaRelease;
++    /** The vanilla release packet to drop, by identity; null when there is none. */
++    private static Packet<?> claimed;
++
++    public final ModeProperty mode = new ModeProperty("mode", 0, new String[]{"CONSUMABLE", "SWORD", "ALL"});
++
++    public NoItemRelease() {
++        super(NAME, false);
++    }
++
++    /** Called by MixinPlayerControllerMP at the head of onStoppedUsingItem. */
++    public static void beginVanillaRelease() {
++        inVanillaRelease = false;
++        claimed = null;
++        if (Myau.moduleManager == null || mc.thePlayer == null) {
++            return;
++        }
++        NoItemRelease self = (NoItemRelease) Myau.moduleManager.modules.get(NoItemRelease.class);
++        if (self == null || !self.isEnabled()) {
++            return;
++        }
++        ItemStack using = ((IAccessorEntityPlayer) mc.thePlayer).getItemInUse();
++        inVanillaRelease = using != null && self.covers(using);
++    }
++
++    /** Called by MixinPlayerControllerMP when onStoppedUsingItem returns. */
++    public static void endVanillaRelease() {
++        inVanillaRelease = false;
++        claimed = null;
++    }
++
++    /**
++     * First thing in MixinNetworkManager.sendPacket, before any listener runs:
++     * remember the vanilla release packet. A packet some module sent (a module
++     * frame is on the stack) is not the vanilla one.
++     */
++    public static void claimVanillaRelease(Packet<?> packet) {
++        if (!inVanillaRelease || claimed != null || !isRelease(packet)) {
++            return;
++        }
++        /* callerModule() would find this very method (a myau.module.modules
++           frame) and always answer "NoItemRelease"; skip our own frames. */
++        if (ActionLedger.callerModuleExcept(NAME) != null) {
++            return;
++        }
++        claimed = packet;
++    }
++
++    /**
++     * Last step of MixinNetworkManager.sendPacket, after the listeners and
++     * PlayerStateManager: true for the claimed packet, once.
++     */
++    public static boolean dropVanillaRelease(Packet<?> packet) {
++        if (claimed == null || packet != claimed) {
++            return false;
++        }
++        claimed = null;
++        /* What EventManager.noteCancel recorded when this module cancelled the
++           event itself: the attribution a correction is weighed against. */
++        ActionLedger.note(NAME, ActionLedger.holdKind(packet, true));
++        return true;
++    }
++
++    private static boolean isRelease(Packet<?> packet) {
++        return packet instanceof C07PacketPlayerDigging
++                && ((C07PacketPlayerDigging) packet).getStatus() == C07PacketPlayerDigging.Action.RELEASE_USE_ITEM;
++    }
++
++    /* Safety net: the window is closed by the mixin's RETURN hook; this closes it
++       anyway if the vanilla method ever left through an exception. */
++    @EventTarget(whenDisabled = true)
++    public void onTick(TickEvent event) {
++        inVanillaRelease = false;
++        claimed = null;
++    }
++
++    @Override
++    public void onDisabled() {
++        inVanillaRelease = false;
++        claimed = null;
++    }
++
++    private boolean covers(ItemStack using) {
++        Item item = using.getItem();
++        if (item instanceof ItemBow || item instanceof ItemFishingRod) {
++            return false;
++        }
++        EnumAction action = using.getItemUseAction();
++        if (action == EnumAction.BOW) {
++            return false;
++        }
++        switch (this.mode.getValue()) {
++            case 0:
++                return action == EnumAction.EAT || action == EnumAction.DRINK;
++            case 1:
++                return action == EnumAction.BLOCK;
++            default:
++                return true;
++        }
++    }
++}
