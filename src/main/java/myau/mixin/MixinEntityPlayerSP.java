@@ -58,6 +58,12 @@ public abstract class MixinEntityPlayerSP extends MixinEntityPlayer {
         if (this.worldObj.isBlockLoaded(new BlockPos(this.posX, 0.0, this.posZ))) {
             UpdateEvent event = new UpdateEvent(EventType.PRE, this.lastReportedYaw, this.lastReportedPitch, this.rotationYaw, this.rotationPitch);
             EventManager.call(event);
+            /* K1 (2026-10-07): KillAura's hit, after every module's rotation. */
+            myau.module.modules.KillAura aura = (myau.module.modules.KillAura)
+                    myau.Myau.moduleManager.modules.get(myau.module.modules.KillAura.class);
+            if (aura != null) {
+                aura.afterRotations(event);
+            }
             RotationState.applyState(event.isRotated() && !this.isRiding(), event.getNewYaw(), event.getNewPitch(), event.getPreYaw(), event.isRotating());
             if (event.isRotated()) {
                 this.pendingYaw = this.rotationYaw;

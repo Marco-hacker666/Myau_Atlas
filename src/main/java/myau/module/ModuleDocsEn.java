@@ -367,11 +367,12 @@ final class ModuleDocsEn {
         help(ka, "Mode", "Single keeps one target; Switch moves to the next one every SwitchDelay.");
         help(ka, "Sort", "Target priority: distance, health, hurt time, or nearest the crosshair.");
         help(ka, "SwitchDelay", "How often the target is re-chosen (ms); in Switch mode also the switch interval.");
-        help(ka, "CPS Mode", "Normal: random between MinCPS and MaxCPS. Record: a recorded human click rhythm (about 9.8 CPS).");
+        help(ka, "CPS Mode", "Normal: random between MinCPS and MaxCPS. Record: a recorded human click rhythm (about 9.8 CPS). Human: LiquidBounce's human clicker, one rate per combo drawn from MinCPS-MaxCPS, log-normal intervals.");
         help(ka, "MinCPS", "Lowest attacks per second (random between the two; ticks cap it at 20).");
         help(ka, "MaxCPS", "Highest attacks per second.");
         help(ka, "AttackRange", "Distance at which it actually attacks (blocks). Vanilla is 3.0.");
         help(ka, "SwingRange", "Distance at which it starts turning and swinging; a little more than the attack range.");
+        help(ka, "ScanExtra", "Blocks beyond the swing range at which it already turns to the target, without swinging; +-0.5 per target; 0 = turn from the swing range only (LiquidBounce ScanRange).");
         help(ka, "RequirePress", "Only attack while the attack key is held.");
         help(ka, "AllowMining", "With the crosshair on a block and the attack key held, mine instead of attacking.");
         help(ka, "InventoryCheck", "No attacks while an inventory or chest screen is open.");

@@ -3505,3 +3505,124 @@ No ledge action is taken. S1's edge crouch still runs only when safe-walk is tur
 - Backups: backups/src/Scaffold.java.pre-S4b-nosneak-20261007 and Scaffold.java.S4b-nosneak-20261007.
 - Build: md5 9ec003ec9811fbe2dd324c28e48a7443. Not installed at first, because the game was running.
 - 2026-10-07 installed S4b (md5 9ec003ec9811fbe2dd324c28e48a7443) with the game closed; the S4 jar was saved as backups/jars/Myau+UI_fixed.jar.pre-S4b-20261007. Install checks: 62 classes under myau/mixin, one Myau jar in mods.
+
+## 2026-10-07 — v1.3.0 pushed to GitHub
+The working tree was synced into `../OpenMyau-Plus-release` with the same anonymisation as before; line endings are preserved.
+
+**Changes in this release:**
+- Scaffold: S1, S3, S4b.
+- The bug report: BugReport, Redactor, RedactorTest, ReportCommand, and the AtlasClickGui dialog.
+- Myau.java registers `.report`.
+- ENGINEERING-NOTES: Vape notes reworded; REFERENCE-SCAFFOLD-KILLAURA.md not published; KV id removed.
+
+**Build and push:**
+- Release folder build: 261 tests pass, 62 mixin classes.
+- Commit 6d07f28 and tag v1.3.0 pushed to main.
+
+**Release:**
+- Asset: `../release-assets/Myau-Atlas-v1.3.0.jar`, sha256 eb6f87487a936024f7ae31457d53cc9447c923b805089f849524d3d4d8186579.
+- Release notes: `../release-assets/RELEASE-NOTES-v1.3.0.md`.
+- The built-in browser is not signed in to GitHub, so the user creates the release page and uploads the jar (27 MB).
+
+### 2026-10-07 S4c: GodBridge jumps at the ledge and aims at the edge
+**User, after testing S4b:** GodBridge is close. It should jump by itself, it sometimes falls after a few blocks, and it
+should still aim at the edge properly. The 19:23 log: 1583 placements, most with rot 0.1–0.8 (the fixed look holds).
+
+**1. Ledge with JUMP** (`godBridgeLedge`, LiquidBounce's default ledge action). It applies in GODBIRGDE mode, on the
+ground, while moving and not sneaking. The player jumps (`movementInput.jump`) when:
+- after this tick's motion, the box shrunk by 0.2 per side has nothing under it; and
+- the look sent this tick (`sentLookYaw/Pitch`, recorded in onUpdateClick), traced from the moved eye, would not
+  place a valid block (not on an UP face, cell replaceable, on the layer under the feet, under the moved box).
+
+There is no jump with Jump Boost II or higher; LB skips JUMP when the apex is 2 blocks or more. There is no crouch.
+
+**2. Edge aim.**
+- The face loop now measures its least turn from the GodBridge fixed look (`refYaw/refPitch`), not from the sent
+  look.
+- If the fixed look's lookHit misses from here, but an aim point on the face is within `GODBRIDGE_EDGE_AIM`
+  (25°, |yaw| + |pitch|) of the fixed look, that point is used.
+- Otherwise the fixed look stays.
+- Other modes are unchanged: refYaw/refPitch fall back to the sent look.
+
+**Files.**
+- Backups: backups/src/Scaffold.java.pre-S4c-jump-edge-20261007 and Scaffold.java.S4c-jump-edge-20261007.
+- Build: md5 11035aba6f1db3b2caf9fd6cf875355b.
+- 2026-10-07 installed S4c (md5 11035aba6f1db3b2caf9fd6cf875355b) with the game closed; the S4b jar was saved as backups/jars/Myau+UI_fixed.jar.pre-S4c-20261007. Install checks: 62 classes under myau/mixin, one Myau jar in mods.
+
+## 2026-10-07 — KillAura K1: attack after every module's rotation
+**Context.** Scaffold S4c is installed. The user then reported slow single-player loads and one crash. Neither was
+Myau:
+- Java's IPv4 route to Mojang/Microsoft (Azure Front Door) timed out, while IPv6 and Google over IPv4 worked.
+- `fillProfileProperties` on the client thread waited 15 s, twice per world load.
+- The fix the user applied was WARP or `-Djava.net.preferIPv6Addresses=true`.
+
+The user then asked to start KillAura (plan K1–K5 in REFERENCE-SCAFFOLD-KILLAURA.md).
+
+**Why.** KillAura runs at UpdateEvent LOW and attacked inside that handler, judging the hit (aimedAt) along
+`event.getNewYaw()` as it stood then. Later handlers can still change the look sent in the movement packet:
+- Displace at LOWEST, priority 100;
+- Speed at LOW, priority 1, registered after KillAura (ties go to the last caller).
+
+When that happens, the C02 goes out judged along a look that is never sent. Grim judges the hit by the next movement
+packet's look, so the hit is dropped or flagged. LiquidBounce attacks after all rotations.
+
+**Change.**
+- In the NONE, Legit, Silent, LockView and Hypixel (Raven) rotation modes, onUpdate no longer calls performAttack. It
+  records `deferredAttack`, `deferredSwap` and `deferredBlocked`.
+- `KillAura.afterRotations(event)` runs them. MixinEntityPlayerSP.onUpdate calls it right after
+  `EventManager.call(PRE)`, when no module can turn the look any more.
+- The call does performAttack along the final `getNewYaw/Pitch`, then the same block handling as before
+  (`finishAttack`: interactAttack or sendUseItem, the blink reset).
+- The packet order within the tick is unchanged: unblock, then attack, then block, all before the C03.
+- The LiquidBounce and Advanced modes keep their inline attack, because they judge along their own rotation.
+- `deferredPending` is cleared at the start of each PRE, so a hit held across a skipped tick never fires late.
+
+**Files.**
+- Backups: backups/src/KillAura.java.pre-K1-20261007 and KillAura.java.K1-20261007;
+  MixinEntityPlayerSP.java.pre-K1-20261007 and MixinEntityPlayerSP.java.K1-20261007.
+- Build: 261 tests pass, md5 3062d1d72c1523c90601eea1a275cc04.
+
+### 2026-10-07 KillAura K2: scan range (turn before reach, no swing)
+The user said to continue without testing K1 first. K1 is built but not installed, because the game was running.
+
+**Before.** The aim only started turning once the target's box was inside SwingRange (3.3 for the user). From
+standstill it then had to catch up within reach, at the turn-speed cap, and the first clicks were judged off target.
+
+**LiquidBounce.** The target is kept and the aim turned within reach plus ScanExtraRange (2–3 blocks). Attacks happen
+only within reach.
+
+**Change.**
+- **New setting `ScanExtra`** (default 2.5, 0–4): blocks beyond SwingRange at which the aim turns. 0 restores the old
+  behaviour.
+- **Per-target roll:** `scanRoll` = ScanExtra ± 0.5, drawn when a new target is picked.
+- **Targeting:**
+  - `isInRange` also accepts candidates within SwingRange + ScanExtra + 0.5.
+  - A target is kept while its box is within `scanRange()`. It used to be kept only within SwingRange.
+  - It is given up for someone in SwingRange, as it already was for someone in AttackRange.
+- **Rotation:** all rotation branches and the smooth-back / Advanced "lost target" checks use the scan range.
+- **Attack:** `attack` is forced false unless the box is within SwingRange, so nothing swings at the air from scan
+  range. performAttack swings before it checks the aim. Blocking runs as before.
+- **ModuleDocs / ModuleDocsEn:** ScanExtra added to the 出手 group, with help text in both languages.
+
+**Files.**
+- Backups: backups/src/KillAura.java.pre-K2-20261007 and KillAura.java.K2-20261007; ModuleDocs(.En).java.pre-K2-20261007.
+- Build: 261 tests pass, md5 8daa533ccf4a0eee2b28ff7ed48255dd. This jar includes K1.
+
+### 2026-10-07 KillAura K3: "Human" CPS mode (LiquidBounce HumanClickTiming)
+**Change.** New `CPS Mode` option **Human**; the user's default "Normal" is unchanged. MinCPS and MaxCPS are shown
+for both Normal and Human.
+
+`humanInterval()`:
+- **Combo rate:** a combo ends after more than 250 ms without a click (LB ClickPlan IDLE_MS). Each combo draws one
+  rate evenly from MinCPS–MaxCPS.
+- **Interval:** exp(mu + 0.45·N(0,1)), with mu = ln(1000/rate) − 0.45²/2, so the mean interval matches the rate.
+  It is clamped to 10–1000 ms.
+- **Not ported:** LB's two clicks per tick. The existing countdown (`attackDelayMS`, remainder carried) allows at
+  most one attack per tick, and a short interval is carried into the next tick.
+
+ModuleDocs and ModuleDocsEn: the CPS Mode help now explains Human.
+
+**Files.**
+- Backups: backups/src/KillAura.java.pre-K3-20261007, KillAura.java.K3-20261007 and ModuleDocs(.En).java.pre-K3-20261007.
+- Build: 261 tests pass, md5 c740661e28a7b1ba097a1a1824c1516e. This jar includes K1, K2 and K3.
+- 2026-10-08 installed K1+K2+K3 (md5 c740661e28a7b1ba097a1a1824c1516e) with the game closed; the S4c jar was saved as backups/jars/Myau+UI_fixed.jar.pre-K123-20261007. Install checks: 62 classes under myau/mixin, one Myau jar in mods.

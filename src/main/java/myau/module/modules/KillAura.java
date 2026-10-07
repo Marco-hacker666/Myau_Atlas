@@ -85,6 +85,13 @@ public class KillAura extends Module {
      * trip; below one is cautious.
      */
     public final FloatProperty aimLead = new FloatProperty("AimLead", 0.0F, 0.0F, 1.5F);
+    /**
+     * K2 (2026-10-07): LiquidBounce's scan range. Blocks beyond SwingRange at
+     * which the aim already turns to the target, without swinging; drawn
+     * anew within +-0.5 for every new target (LB: ScanExtraRange 2-3).
+     * 0 = turn only from SwingRange, as before.
+     */
+    public final FloatProperty scanExtra = new FloatProperty("ScanExtra", 2.5F, 0.0F, 4.0F);
     /** Blocks of lead allowed on any axis, so a bad velocity cannot fling it. */
     public final FloatProperty aimLeadCap = new FloatProperty("AimLeadCap", 1.2F, 0.2F, 3.0F,
             () -> this.aimLead.getValue() > 0.0F);
@@ -214,6 +221,17 @@ public class KillAura extends Module {
     private int patternIndex = 0;
     private int switchTick = 0;
     private boolean hitRegistered = false;
+    /* K1 (2026-10-07): the attack of this tick, held until every module has
+       set the rotation (afterRotations). */
+    private boolean deferredAttack;
+    private boolean deferredSwap;
+    private boolean deferredBlocked;
+    private boolean deferredPending;
+    /** K2: this target's scan range beyond SwingRange, drawn when it was picked. */
+    private float scanRoll;
+    /* K3: the Human clicker's rate for this combo, and when it last clicked. */
+    private double humanComboCps;
+    private long humanLastClick;
     private boolean blockingState = false;
     private boolean isBlocking = false;
     private boolean fakeBlockState = false;
@@ -229,7 +247,7 @@ public class KillAura extends Module {
         this.lastTickProcessed = 0;
 
         // 新增CPS模式属性
-        this.cpsMode = new ModeProperty("CPS Mode", 0, new String[]{"Normal", "Record"});
+        this.cpsMode = new ModeProperty("CPS Mode", 0, new String[]{"Normal", "Record", "Human"});
 
         this.mode = new ModeProperty("Mode", 1, new String[]{"Single", "Switch"});
         this.sort = new ModeProperty("Sort", 1, new String[]{"Distance", "Health", "HurtTime", "FOV"});
@@ -313,16 +331,40 @@ public class KillAura extends Module {
         this.turnAccel.when(turnBack);
         this.smoothing.when(() -> plainAim.getAsBoolean() && aimMode.getValue() == 0);
         this.angleStep.when(() -> plainAim.getAsBoolean() && aimMode.getValue() == 0);
-        this.minCPS.when(() -> cpsMode.getValue() == 0);
-        this.maxCPS.when(() -> cpsMode.getValue() == 0);
+        this.minCPS.when(() -> cpsMode.getValue() == 0 || cpsMode.getValue() == 2);
+        this.maxCPS.when(() -> cpsMode.getValue() == 0 || cpsMode.getValue() == 2);
         this.moveFix.when(() -> rotations.getValue() != 0);
+    }
+
+    /**
+     * K3 (2026-10-07): LiquidBounce's Human click timing (HumanClickTiming,
+     * ClickPlan). A combo -- clicks with no pause over 250 ms -- gets one rate
+     * drawn evenly from MinCPS..MaxCPS; each interval is log-normal around it
+     * (sigma 0.45, mu shifted by -sigma^2/2 so the mean lands on the rate),
+     * kept to 10..1000 ms. One click a tick at most here: the countdown in
+     * onUpdate carries a short interval into the next tick (LB allows two).
+     */
+    private long humanInterval() {
+        final double sigma = 0.45;
+        long now = System.currentTimeMillis();
+        if (this.humanComboCps <= 0.0 || now - this.humanLastClick > 250L) {
+            int min = this.minCPS.getValue();
+            int max = Math.max(min, this.maxCPS.getValue());
+            this.humanComboCps = min + this.random.nextDouble() * (max - min);
+        }
+        this.humanLastClick = now;
+        double mu = Math.log(1000.0 / this.humanComboCps) - sigma * sigma / 2.0;
+        long interval = Math.round(Math.exp(mu + sigma * this.random.nextGaussian()));
+        return Math.max(10L, Math.min(1000L, interval));
     }
 
     private long getAttackDelay() {
         if (this.isBlocking) {
             return (long) (1000.0F / this.autoBlockCPS.getValue());
         } else {
-            if (this.cpsMode.getValue() == 1) {
+            if (this.cpsMode.getValue() == 2) {
+                return this.humanInterval();
+            } else if (this.cpsMode.getValue() == 1) {
                 /* The recording is four intervals to a click (each group of
                    four sums to 78-131ms, 102 on average: 9.8 CPS). Taken one
                    entry at a time, as until 2026-10-04, every "click" was a
@@ -335,6 +377,38 @@ public class KillAura extends Module {
             } else {
                 return 1000L / this.cps.random();
             }
+        }
+    }
+
+    /**
+     * K1 (2026-10-07): this tick's held attack, from MixinEntityPlayerSP right
+     * after the PRE UpdateEvent, when no module can change the look any more.
+     * The hit is judged along the look the movement packet will carry.
+     */
+    public void afterRotations(UpdateEvent event) {
+        if (!this.deferredPending) {
+            return;
+        }
+        this.deferredPending = false;
+        if (!this.isEnabled() || this.target == null) {
+            return;
+        }
+        boolean attacked = this.deferredAttack && this.performAttack(event.getNewYaw(), event.getNewPitch());
+        this.finishAttack(event, attacked, this.deferredSwap, this.deferredBlocked);
+    }
+
+    /** The block after the hit, as it was done straight after it before K1. */
+    private void finishAttack(UpdateEvent event, boolean attacked, boolean swap, boolean blocked) {
+        if (swap) {
+            if (attacked) {
+                this.interactAttack(event.getNewYaw(), event.getNewPitch());
+            } else {
+                this.sendUseItem();
+            }
+        }
+        if (blocked) {
+            Myau.blinkManager.setBlinkState(false, BlinkModules.AUTO_BLOCK);
+            Myau.blinkManager.setBlinkState(true, BlinkModules.AUTO_BLOCK);
         }
     }
 
@@ -582,7 +656,8 @@ public class KillAura extends Module {
     }
 
     private boolean isInRange(EntityLivingBase entityLivingBase) {
-        return this.isInBlockRange(entityLivingBase) || this.isInSwingRange(entityLivingBase) || this.isInAttackRange(entityLivingBase);
+        return this.isInBlockRange(entityLivingBase) || this.isInSwingRange(entityLivingBase)
+                || this.isInAttackRange(entityLivingBase) || this.isInScanRange(entityLivingBase);
     }
 
     private boolean isInBlockRange(EntityLivingBase entityLivingBase) {
@@ -595,6 +670,20 @@ public class KillAura extends Module {
 
     private boolean isBoxInSwingRange(AxisAlignedBB axisAlignedBB) {
         return RotationUtil.distanceToBox(axisAlignedBB) <= (double) this.swingRange.getValue();
+    }
+
+    /** K2: SwingRange plus this target's scan extra -- where the aim starts turning. */
+    private double scanRange() {
+        return this.swingRange.getValue() + this.scanRoll;
+    }
+
+    private boolean isInScanRange(EntityLivingBase entityLivingBase) {
+        return RotationUtil.distanceToEntity(entityLivingBase)
+                <= this.swingRange.getValue() + Math.max(0.0F, this.scanExtra.getValue() + 0.5F);
+    }
+
+    private boolean isBoxInScanRange(AxisAlignedBB axisAlignedBB) {
+        return RotationUtil.distanceToBox(axisAlignedBB) <= this.scanRange();
     }
 
     private boolean isInAttackRange(EntityLivingBase entityLivingBase) {
@@ -747,6 +836,7 @@ public class KillAura extends Module {
                     return;
                 }
                 boolean rotatedBefore = event.isRotated();
+                this.deferredPending = false;
                 if (this.attackDelayMS > 0L) {
                     this.attackDelayMS -= 50L;
                 }
@@ -1052,7 +1142,22 @@ public class KillAura extends Module {
                         }
                     }
                     boolean attacked = false;
-                    if ((this.rotations.getValue() == 4 || this.rotations.getValue() == 6) && this.smoothBack.getValue() && (this.target == null || !this.isBoxInSwingRange(this.target.getBox()))) {
+                    /* K1: the attack (and the block after it) waits for
+                       afterRotations, called once every module has set this
+                       tick's look -- Displace (LOWEST, priority 100) and Speed
+                       (LOW, priority 1, after this) could still turn it after
+                       a hit judged along ours. LiquidBounce attacks after all
+                       rotations too. LiquidBounce/Advanced keep their own
+                       timing: they judge by their own rotation. */
+                    boolean deferred = false;
+                    boolean inSwing = this.target != null && this.isBoxInSwingRange(this.target.getBox());
+                    if (!inSwing) {
+                        /* K2: turning from scan range, but no swing until
+                           SwingRange -- performAttack swings before it checks
+                           the aim, so out here it would swing at the air. */
+                        attack = false;
+                    }
+                    if ((this.rotations.getValue() == 4 || this.rotations.getValue() == 6) && this.smoothBack.getValue() && (this.target == null || !this.isBoxInScanRange(this.target.getBox()))) {
                         Rotation currentRot = this.serverRotation;
                         Rotation playerRot = new Rotation(mc.thePlayer.rotationYaw, mc.thePlayer.rotationPitch);
                         if (Math.abs(MathHelper.wrapAngleTo180_float(currentRot.yaw - playerRot.yaw)) > 1.0F || Math.abs(MathHelper.wrapAngleTo180_float(currentRot.pitch - playerRot.pitch)) > 1.0F) {
@@ -1072,7 +1177,7 @@ public class KillAura extends Module {
                             this.serverRotation = playerRot;
                         }
                     }
-                    if (this.target != null && this.isBoxInSwingRange(this.target.getBox())) {
+                    if (this.target != null && this.isBoxInScanRange(this.target.getBox())) {
                         if (this.rotations.getValue() == 4) {
                             Rotation currentRot = this.serverRotation;
                             if (Float.isNaN(currentRot.yaw) || Float.isNaN(currentRot.pitch)) {
@@ -1128,9 +1233,7 @@ public class KillAura extends Module {
                             if (this.moveFix.getValue() != 0) {
                                 event.setPervRotation(finalYaw, 1);
                             }
-                            if (attack) {
-                                attacked = this.performAttack(event.getNewYaw(), event.getNewPitch());
-                            }
+                            deferred = true;
                         } else if (this.rotations.getValue() >= 1) {
                             float[] rotations = this.aimMode.getValue() == 1
                                     ? this.stepTowards(event.getYaw(), event.getPitch())
@@ -1175,30 +1278,23 @@ public class KillAura extends Module {
                             if (this.moveFix.getValue() != 0 || this.rotations.getValue() == 3) {
                                 event.setPervRotation(finalYaw, 1);
                             }
-                            if (attack) {
-                                attacked = this.performAttack(event.getNewYaw(), event.getNewPitch());
-                            }
+                            deferred = true;
                         } else {
-                            if (attack) {
-                                attacked = this.performAttack(event.getNewYaw(), event.getNewPitch());
-                            }
+                            deferred = true;
                         }
                     }
                     if (this.rotations.getValue() == 6
-                            && (this.target == null || !this.isBoxInSwingRange(this.target.getBox()))) {
+                            && (this.target == null || !this.isBoxInScanRange(this.target.getBox()))) {
                         /* Out of reach: the next landing waits a reaction again. */
                         this.advancedAim.lostTarget();
                     }
-                    if (swap) {
-                        if (attacked) {
-                            this.interactAttack(event.getNewYaw(), event.getNewPitch());
-                        } else {
-                            this.sendUseItem();
-                        }
-                    }
-                    if (blocked) {
-                        Myau.blinkManager.setBlinkState(false, BlinkModules.AUTO_BLOCK);
-                        Myau.blinkManager.setBlinkState(true, BlinkModules.AUTO_BLOCK);
+                    if (deferred) {
+                        this.deferredAttack = attack;
+                        this.deferredSwap = swap;
+                        this.deferredBlocked = blocked;
+                        this.deferredPending = true;
+                    } else {
+                        this.finishAttack(event, attacked, swap, blocked);
                     }
                 }
                 if (!rotatedBefore && event.isRotated()) {
@@ -1509,7 +1605,9 @@ public class KillAura extends Module {
                     boolean needsNewTarget = false;
                     if (this.target == null
                             || !this.isValidTarget(this.target.getEntity())
+                            || !this.isBoxInScanRange(this.target.getBox())
                             || !this.isBoxInSwingRange(this.target.getBox())
+                            && validTargets.stream().anyMatch(this::isInSwingRange)
                             || !this.isBoxInAttackRange(this.target.getBox())
                             && validTargets.stream().anyMatch(this::isInAttackRange)
                             || switchDue
@@ -1583,6 +1681,9 @@ public class KillAura extends Module {
                                     timing.noteRedirect();
                                 }
                                 this.target = new AttackData(newTarget, this);
+                                float extra = this.scanExtra.getValue();
+                                this.scanRoll = extra <= 0.0F ? 0.0F
+                                        : Math.max(0.0F, extra + RandomUtil.nextFloat(-0.5F, 0.5F));
                             }
                         }
                     }

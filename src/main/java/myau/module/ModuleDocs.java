@@ -411,7 +411,7 @@ public final class ModuleDocs {
         g("KillAura",
                 h("目標", "Mode", "Sort", "SwitchDelay", "FOV", "Players", "Bosses", "Mobs", "Animals", "Golems",
                         "Silverfish", "Teams", "BotCheck", "ThroughWalls"),
-                h("出手", "CPS Mode", "MinCPS", "MaxCPS", "AttackRange", "SwingRange", "RequirePress",
+                h("出手", "CPS Mode", "MinCPS", "MaxCPS", "AttackRange", "SwingRange", "ScanExtra", "RequirePress",
                         "AllowMining", "WeaponsOnly", "AllowTools", "InventoryCheck"),
                 h("格擋", "auto-block", "AttackTick", "AutoBlockRequirePress", "AutoBlockCPS", "AutoBlockRange"),
                 h("轉頭", "Rotations", "MoveFix", "SmoothBack", "AimMode", "MinTurnSpeed", "MaxTurnSpeed",
@@ -607,11 +607,12 @@ public final class ModuleDocs {
         help(ka, "Mode", "Single 一直打同一個人；Switch 每過 SwitchDelay 換下一個目標。");
         help(ka, "Sort", "選目標的優先順序：距離、血量、受傷時間、或離準心最近。");
         help(ka, "SwitchDelay", "多久重新挑一次目標（毫秒）；Switch 模式下也是換人的間隔。");
-        help(ka, "CPS Mode", "Normal：在 MinCPS～MaxCPS 間隨機。Record：照一段真人錄下的點擊節奏（約 9.8 CPS）。");
+        help(ka, "CPS Mode", "Normal：在 MinCPS～MaxCPS 間隨機。Record：照一段真人錄下的點擊節奏（約 9.8 CPS）。Human：LiquidBounce 的真人點擊器，每輪連擊在 MinCPS～MaxCPS 間抽一個速度，間隔呈對數常態分布。");
         help(ka, "MinCPS", "每秒攻擊次數下限（實際在上下限間隨機，最高受 tick 限制為 20）。");
         help(ka, "MaxCPS", "每秒攻擊次數上限。");
         help(ka, "AttackRange", "真正出手的距離（格）。原版是 3.0。");
         help(ka, "SwingRange", "開始轉頭與揮手的距離，略大於攻擊距離。");
+        help(ka, "ScanExtra", "比揮手距離再遠幾格就先轉頭（不揮手），每個目標隨機 ±0.5；0 = 只從揮手距離才轉（LiquidBounce ScanRange）。");
         help(ka, "RequirePress", "只有按住左鍵時才攻擊。");
         help(ka, "AllowMining", "準心對著方塊且按住左鍵時，讓你挖方塊而不是打人。");
         help(ka, "InventoryCheck", "開著背包、箱子等畫面時不攻擊。");
