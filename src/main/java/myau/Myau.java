@@ -261,6 +261,7 @@ public class Myau {
         moduleManager.modules.put(EffectsHUD.class, new EffectsHUD());
         moduleManager.modules.put(AutoRespawn.class, new AutoRespawn());
         commandManager.commands.add(new BindCommand());
+        commandManager.commands.add(new myau.command.commands.ReportCommand());
         commandManager.commands.add(new ClickGuiCommand());
         commandManager.commands.add(new ConfigCommand());
         commandManager.commands.add(new DenickCommand());

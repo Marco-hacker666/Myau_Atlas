@@ -950,6 +950,9 @@ public class AtlasClickGui extends GuiScreen {
                     this.dropdown = null;
                 }
             }
+            if (this.reportConfirm) {
+                drawReportConfirm(x, y, width, height, mx, my);
+            }
         } finally {
             GL11.glPopMatrix();
             Liquid.setView(1.0F, 0.0F, 0.0F);
@@ -1020,6 +1023,77 @@ public class AtlasClickGui extends GuiScreen {
         GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
+    /** The bug-report dialog is open: nothing is sent until Send. */
+    private boolean reportConfirm;
+
+    private void sendReport() {
+        this.reportConfirm = false;
+        if (Myau.notificationManager != null) {
+            Myau.notificationManager.add("Sending bug report...", 2000L);
+        }
+        myau.util.BugReport.send(null, myau.command.commands.ReportCommand::announce);
+    }
+
+    /** An amber warning triangle with an exclamation mark, centred on (cx, cy). */
+    private void drawWarning(float cx, float cy, float size) {
+        int amber = 0xFFFFC857;
+        float top = cy - size;
+        float bottom = cy + size * 0.85F;
+        float half = size * 1.05F;
+        float w = Math.max(1.1F, size * 0.26F);
+        Liquid.line(cx, top, cx - half, bottom, w, amber);
+        Liquid.line(cx - half, bottom, cx + half, bottom, w, amber);
+        Liquid.line(cx + half, bottom, cx, top, w, amber);
+        Liquid.line(cx, cy - size * 0.35F, cx, cy + size * 0.25F, w, amber);
+        Liquid.dot(cx, cy + size * 0.55F, w * 0.6F, amber);
+    }
+
+    /**
+     * Asks before anything leaves the machine: what goes to Discord, what is
+     * taken out, and Send / Cancel. Drawn over the whole window.
+     */
+    private void drawReportConfirm(int x, int y, int width, int height, float mx, float my) {
+        Liquid.rect(x, y, x + width, y + height, RADIUS, 0x99000000, 0xAA000000);
+        hit("reportOutside", null, x, y, x + width, y + height);
+
+        float w = 320.0F;
+        float h = 178.0F;
+        float bx = x + (width - w) / 2.0F;
+        float by = y + (height - h) / 2.0F;
+        Liquid.shadow(bx, by, bx + w, by + h, 16.0F, 18.0F, 0x80000000, 4.0F);
+        Liquid.rect(bx, by, bx + w, by + h, 16.0F, myau.ui.UiMode.isLight() ? 0xFAF6F8FB : 0xF2141820,
+                myau.ui.UiMode.isLight() ? 0xFAEEF1F5 : 0xF20D1016);
+        Liquid.rim(bx, by, bx + w, by + h, 16.0F, 1.0F, alpha(0xFFFFC857, 0.55F), ink(0x10));
+        hit("reportDialog", null, bx, by, bx + w, by + h);
+
+        float cx = bx + w / 2.0F;
+        drawWarning(cx, by + 26.0F, 11.0F);
+        font(13.0F, true).drawCentred("Send a bug report?", cx, by + 50.0F, TEXT);
+
+        LiquidFont body = font(8.5F, false);
+        float line = by + 70.0F;
+        String[] lines = {
+                "This uploads a report to the Discord #bug-reports channel:",
+                "versions, OptiFine, your enabled modules and their settings,",
+                "the latest flag / placement / Clutch logs and game warnings.",
+                "Your name, other players' names, tokens and IPs are removed."
+        };
+        for (int i = 0; i < lines.length; i++) {
+            body.drawCentred(lines[i], cx, line + i * 12.0F, i == 3 ? alpha(0xFFFFC857, 0.95F) : DIM);
+        }
+
+        float buttonsY = by + h - 22.0F;
+        float cancelW = font(8.5F, true).width("Cancel") + 30;
+        float sendW = font(8.5F, true).width("Send") + 40;
+        float gap = 10.0F;
+        float left = cx - (cancelW + gap + sendW) / 2.0F;
+        drawButton("reportCancel", null, left, buttonsY, cancelW, "Cancel", 1, mx, my);
+        drawButton("reportSend", null, left + cancelW + gap, buttonsY, sendW, "Send", 0, mx, my);
+        if (mx >= bx && mx <= bx + w && my >= by && my <= by + h) {
+            this.hint = "Enter sends  ·  Esc cancels";
+        }
+    }
+
     private void drawHeader(int x, int y, int width, int sidebar, int detail, float mx, float my) {
         float cy = y + HEADER / 2.0F;
         int accent = accent();
@@ -1044,7 +1118,15 @@ public class AtlasClickGui extends GuiScreen {
         if (mx >= editorX && mx <= right && my >= cy - 10 && my <= cy + 10) {
             this.hint = "Move the HUD elements on screen";
         }
-        float modeLeft = drawModeSwitch(editorX - 10, cy, width >= 600, mx, my);
+        /* One-click bug report (2026-10-07): copies everything #bug-reports asks for. */
+        float reportWidth = font(8.5F, true).width("Report") + 34;
+        float reportX = editorX - 8 - reportWidth;
+        drawButton("bugReport", null, reportX, cy, reportWidth, "    Report", 0, mx, my);
+        drawWarning(reportX + 13.0F, cy, 5.0F);
+        if (mx >= reportX && mx <= reportX + reportWidth && my >= cy - 10 && my <= cy + 10) {
+            this.hint = "Send a bug report to the Discord #bug-reports channel  ·  asks first";
+        }
+        float modeLeft = drawModeSwitch(reportX - 10, cy, width >= 600, mx, my);
 
         /* Search covers every page; results from the other page are marked in the list. */
         float sx = tabsEnd + 12;
@@ -2900,6 +2982,17 @@ public class AtlasClickGui extends GuiScreen {
         float my = layoutY(mouseY);
         Hit target = hitAt(mx, my);
 
+        /* The report dialog takes every click while it is open: Send sends,
+           anything outside the dialog box closes it (2026-10-07). */
+        if (this.reportConfirm) {
+            if (target != null && "reportSend".equals(target.kind)) {
+                sendReport();
+            } else if (target == null || !"reportDialog".equals(target.kind)) {
+                this.reportConfirm = false;
+            }
+            return;
+        }
+
         /* An open list takes the next click wherever it lands, and that click
            does nothing else. Letting a dismissing click also toggle whatever
            was underneath turns closing a menu into changing a setting. */
@@ -2951,6 +3044,11 @@ public class AtlasClickGui extends GuiScreen {
         if ("themeMode".equals(target.kind)) {
             this.theme.toggleMode();
             paintPalette();
+            return;
+        }
+        if ("bugReport".equals(target.kind)) {
+            pulse("btn:bugReport");
+            this.reportConfirm = true;
             return;
         }
         if ("hudEditor".equals(target.kind)) {
@@ -3333,6 +3431,14 @@ public class AtlasClickGui extends GuiScreen {
 
     @Override
     protected void keyTyped(char typed, int key) {
+        if (this.reportConfirm) {
+            if (key == Keyboard.KEY_RETURN || key == Keyboard.KEY_NUMPADENTER) {
+                sendReport();
+            } else if (key == Keyboard.KEY_ESCAPE) {
+                this.reportConfirm = false;
+            }
+            return;
+        }
         if (this.binding != null) {
             /* Escape clears rather than cancels: wanting to remove a key is far
                commoner than changing one's mind about setting one. */

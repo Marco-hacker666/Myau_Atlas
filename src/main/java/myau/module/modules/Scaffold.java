@@ -14,6 +14,7 @@ import myau.property.properties.FloatProperty;
 import myau.property.properties.IntProperty;
 import myau.property.properties.ModeProperty;
 import myau.property.properties.PercentProperty;
+import myau.mixin.IAccessorEntity;
 import myau.util.*;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
@@ -47,6 +48,7 @@ import java.util.Map;
 
 public class Scaffold extends Module {
     private static final Minecraft mc = Minecraft.getMinecraft();
+    private static final int ROTATION_GODBRIDGE = 4;
     private static final int ROTATION_SNAP = 7;
     private static final int ROTATION_THREE_FMC = 8;
     private static final int ROTATION_SNAP2 = 9;
@@ -67,6 +69,12 @@ public class Scaffold extends Module {
             0.84375,
             0.90625,
             0.96875
+    };
+    /* S3 (2026-10-07): aim points stay off the outer 15 % of a face, as
+       LiquidBounce's trimFace does. */
+    private static final double[] aimOffsets = new double[]{
+            0.15625, 0.21875, 0.28125, 0.34375, 0.40625, 0.46875, 0.53125,
+            0.59375, 0.65625, 0.71875, 0.78125, 0.84375
     };
     private int rotationTick = 0;
     private int lastSlot = -1;
@@ -775,9 +783,9 @@ public class Scaffold extends Module {
 
                 Vec3 hitVec = null;
                 if (blockData != null) {
-                    double[] x = placeOffsets;
-                    double[] y = placeOffsets;
-                    double[] z = placeOffsets;
+                    double[] x = aimOffsets;
+                    double[] y = aimOffsets;
+                    double[] z = aimOffsets;
                     switch (blockData.facing()) {
                         case NORTH:
                             z = new double[]{0.0};
@@ -813,7 +821,11 @@ public class Scaffold extends Module {
                                         && mop.typeOfHit == MovingObjectType.BLOCK
                                         && mop.getBlockPos().equals(blockData.blockPos())
                                         && mop.sideHit == blockData.facing()) {
-                                    float totalDiff = Math.abs(rotations[0] - baseYaw) + Math.abs(rotations[1] - this.pitch);
+                                    /* S3: the least turn from the look the server already has
+                                       (it was from the last target), so the aim stays put --
+                                       LiquidBounce's NearestRotation / Stabilized. */
+                                    float totalDiff = Math.abs(MathHelper.wrapAngleTo180_float(rotations[0] - event.getYaw()))
+                                            + Math.abs(rotations[1] - event.getPitch());
                                     if (bestYaw == -180.0F && bestPitch == 0.0F || totalDiff < bestDiff) {
                                         bestYaw = rotations[0];
                                         bestPitch = rotations[1];
@@ -830,6 +842,25 @@ public class Scaffold extends Module {
                         this.canRotate = true;
                     } else if (threeFmcMode) {
                         this.canRotate = false;
+                    }
+                }
+                boolean godBridge = this.rotationMode.getValue() == ROTATION_GODBRIDGE;
+                if (godBridge && blockData != null) {
+                    /* S4 (2026-10-07): LiquidBounce's GodBridge. The look is
+                       fixed by the walking direction, not aimed at the block:
+                       it barely moves from tick to tick, and the click comes
+                       only when that look lands on a wanted face
+                       (onUpdateClick, lookHit). Until now this mode re-aimed
+                       at the block every tick -- 30-37 degree turns on the
+                       click ticks in the 2026-10-07 Pika log. */
+                    float[] fixed = this.godBridgeRotation(this.yaw);
+                    this.yaw = fixed[0];
+                    this.pitch = fixed[1];
+                    this.canRotate = true;
+                    if (hitVec == null) {
+                        /* A placeholder only: onUpdateClick replaces it with
+                           where the sent look lands, or clicks nothing. */
+                        hitVec = new Vec3(blockData.blockPos()).addVector(0.5, 0.5, 0.5);
                     }
                 }
                 boolean towerRotating = this.towering || this.isTowering();
@@ -911,7 +942,15 @@ public class Scaffold extends Module {
                        0.0096, which is no one's sensitivity. The click is then
                        re-aimed along the rotation actually sent, so the face
                        and the point it claims are the ones that rotation hits. */
-                    if (this.turnLimited() && !towerRotating) {
+                    if (this.turnLimited() && !towerRotating && !godBridge && blockData != null
+                            && this.lookHit(blockData, event.getYaw(), event.getPitch()) != null) {
+                        /* S3: the look the server already has puts a block where
+                           it is wanted -- keep it. No turn: the click is made with
+                           the very look the server knows, and the aim does not
+                           wander from block to block. */
+                        targetYaw = event.getYaw();
+                        targetPitch = event.getPitch();
+                    } else if (this.turnLimited() && !towerRotating) {
                         /* From the look the server has, at most turn-speed a
                            tick (LiquidBounce: RotationsValueGroup). */
                         Set<RotationEngine.Feature> features = EnumSet.noneOf(RotationEngine.Feature.class);
@@ -1267,6 +1306,15 @@ public class Scaffold extends Module {
             if (mc.thePlayer.onGround && this.stage > 0 && MoveUtil.isForwardPressed()) {
                 mc.thePlayer.movementInput.jump = true;
             }
+            if (this.safeWalk.getValue() && !mc.thePlayer.movementInput.sneak && this.edgeSneak()) {
+                /* S1 (2026-10-07): the edge is held by a real crouch, the way
+                   Vape's Legit/EdgeSneak and LiquidBounce's Ledge do it, and
+                   vanilla's own sneak rule then keeps the player on the block.
+                   Scaled as vanilla scales a held sneak key. */
+                mc.thePlayer.movementInput.sneak = true;
+                mc.thePlayer.movementInput.moveForward *= 0.3F;
+                mc.thePlayer.movementInput.moveStrafe *= 0.3F;
+            }
             if (this.eagleSneaking && !mc.thePlayer.movementInput.sneak) {
                 mc.thePlayer.movementInput.sneak = true;
                 mc.thePlayer.movementInput.moveForward *= 0.3F;
@@ -1320,12 +1368,77 @@ public class Scaffold extends Module {
         }
     }
 
+    /** Until when the edge crouch is held after the edge is left (Vape's "sneak delay"). */
+    private long edgeSneakUntil = 0L;
+
+    /** GodBridge: which side of the block row the player walks on. */
+    private boolean godBridgeRightSide;
+
+    /**
+     * S4 (2026-10-07): LiquidBounce GodBridge's look
+     * (ScaffoldGodBridgeTechnique.getRotations). Facing back along the walk,
+     * rounded to 45 degrees. Straight: 45 degrees off it, to the side of the
+     * row the player is on (swapped when leaning off the block with air
+     * ahead), pitch 75.7. Diagonal: straight back, pitch 75.6. No keys: the
+     * corner of the aimed side, pitch 75.
+     */
+    private float[] godBridgeRotation(float aimYaw) {
+        if (!MoveUtil.isForwardPressed()) {
+            float axis = (float) Math.floor(aimYaw / 90.0F) * 90.0F;
+            return new float[]{axis + 45.0F, 75.0F};
+        }
+        float movingYaw = Math.round((this.getCurrentYaw() + 180.0F) / 45.0F) * 45.0F;
+        if (movingYaw % 90.0F != 0.0F) {
+            return new float[]{movingYaw, 75.6F};
+        }
+        if (mc.thePlayer.onGround) {
+            double x = mc.thePlayer.posX;
+            double y = mc.thePlayer.posY;
+            double z = mc.thePlayer.posZ;
+            double rad = Math.toRadians(movingYaw);
+            this.godBridgeRightSide = Math.floor(x + Math.cos(rad) * 0.5) != Math.floor(x)
+                    || Math.floor(z + Math.sin(rad) * 0.5) != Math.floor(z);
+            EnumFacing toward = EnumFacing.fromAngle(movingYaw);
+            BlockPos ahead = new BlockPos(x + toward.getFrontOffsetX() * 0.6, y, z + toward.getFrontOffsetZ() * 0.6);
+            if (mc.theWorld.isAirBlock(new BlockPos(x, y, z).down()) && mc.theWorld.isAirBlock(ahead.down())) {
+                this.godBridgeRightSide = !this.godBridgeRightSide;
+            }
+        }
+        return new float[]{movingYaw + (this.godBridgeRightSide ? 45.0F : -45.0F), 75.7F};
+    }
+
+    /**
+     * Whether to crouch for the edge this tick. Vape's test: on the ground,
+     * the player's box shrunk by 0.2 a side and moved by this tick's motion
+     * and one block down touches nothing -- the next step has no floor. Once
+     * off the edge the crouch is kept for a random 100-200 ms, so it does not
+     * flicker on and off at the rim.
+     */
+    private boolean edgeSneak() {
+        if (!mc.thePlayer.onGround || mc.thePlayer.capabilities.isFlying) {
+            this.edgeSneakUntil = 0L;
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        AxisAlignedBB next = mc.thePlayer.getEntityBoundingBox().expand(-0.2, 0.0, -0.2)
+                .offset(mc.thePlayer.motionX, -1.0, mc.thePlayer.motionZ);
+        if (mc.theWorld.getCollidingBoundingBoxes(mc.thePlayer, next).isEmpty()) {
+            this.edgeSneakUntil = now + 100L + (long) (Math.random() * 100.0);
+            return true;
+        }
+        return now < this.edgeSneakUntil;
+    }
+
     @EventTarget
     public void onSafeWalk(SafeWalkEvent event) {
-        if (this.isEnabled() && this.safeWalk.getValue()) {
-            if (mc.thePlayer.onGround && mc.thePlayer.motionY <= 0.0 && PlayerUtil.canMove(mc.thePlayer.motionX, mc.thePlayer.motionZ, -1.0)) {
-                event.setSafeWalk(true);
-            }
+        /* S1 (2026-10-07): no silent clamp. Until now safe-walk stopped the
+           player at the edge without crouching -- a stop Grim's movement
+           simulation cannot produce, so every such edge was a "Simulation"
+           and a disputed onGround ("GroundSpoof claimed true"), measured
+           2026-10-06. The edge is now held by a real crouch (onMoveInput),
+           and a crouching player keeps to the edge by vanilla's own rule. */
+        if (this.isEnabled() && this.safeWalk.getValue() && mc.thePlayer.isSneaking()) {
+            event.setSafeWalk(true);
         }
     }
 

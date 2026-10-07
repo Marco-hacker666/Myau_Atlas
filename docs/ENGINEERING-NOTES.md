@@ -3136,6 +3136,15 @@ which are not in `src/` yet. The clean source is `backups/src/src-before-atlas-u
 - Fix: blur and glass effects fall back to plain drawing when framebuffers are unavailable (OptiFine Fast Render),
   instead of whitening the screen.
 
+**GitHub (same night): not pushed, on the user's word ("github先不用").**
+- The release folder has a local commit, 1f42f94: the Atlas UI update, the three fixes and a README update. 254
+  tests pass.
+- The push was rejected because the remote has two commits the local repo lacks: 6738434 (web upload of
+  `atlas-ui.patch` to the repo root) and a8547fe (`.github/workflows/build.yml`).
+- That workflow applies `atlas-ui.patch` only if `git apply --check` passes. On a tree that already has the
+  changes, the check fails and it builds as-is.
+- When publishing: `git pull --rebase`, then build, then push. Never force.
+
 ## The 13 OpenSkid modules ported from source; HUD editor support (2026-10-06, ~00:20)
 
 **User:** "你趕快去加回來，我給你開權限了". The download was then allowed.
@@ -3337,3 +3346,162 @@ Kept for later: the held-look / ledge-crouch / stabilized source in `backups/src
 Open problem in ff7ba658: same-tick turn+click is judged along the old look (REJECT `ray miss`), and the silent
 safe-walk clamp gives Grim Simulation/GroundSpoof on edges.
 **Installed rollback** (game closed, gated): md5 ff7ba658, 62 mixins, one Myau jar. Replaced a93c25ef kept as backups/jars/Myau+UI_fixed.jar.a93c25ef-stabilized-20261006.
+
+## 2026-10-07 — One-click bug report (Atlas "Report" button and `.report`)
+Testers in the new Discord rarely know what to send. **Report** (Atlas header, left of HUD Editor) and the command
+`.report` / `.bugreport` build one text block, copy it to the clipboard and save it as
+`config/Myau/reports/report-<stamp>.txt` (`myau.util.BugReport`). It starts with two lines for the tester to fill
+("What happened", "How to reproduce"), then a code block with: client version, ClickGUI style, Forge, Java, OS, max
+memory, GPU and GL version, OptiFine (detected by `GameSettings.ofFastRender`) and Fast Render state, framebuffers /
+shader support, display size, GUI scale, fps, server (or singleplayer) and ping, the other Forge mods, **every enabled
+module with all its settings**, the last 25 FlagDetector lines, 15 place-log lines, 15 Clutch-log lines, and the last 40
+game-log lines that are warnings, errors, stack traces or client / anticheat messages. **Other players' chat is never
+included** (a [CHAT] line is kept only if it is from the client or an anticheat).
+**Redaction** (`myau.util.Redactor`, pure, 7 tests in `RedactorTest`): session token and JWT-shaped strings → `<token>`;
+own UUID → `<my-uuid>`, other UUIDs → `<uuid>`; 40+ char tokens; e-mails; the OS home folder (both slash styles) →
+`<home>`; own name → `<me>`; tab-list names → `<player>` (whole words, case-insensitive, longest first); the OS account →
+`<user>`; IPv4 → `<ip>` / `<lan-ip>` / `127.x.x.x`. A long paste becomes a message.txt in Discord automatically.
+Build + 261 tests. **Installed** (game closed, gated): md5 b37a5991, 62 mixins. Backups: `backups/src/src-before-bug-report-20261007`,
+`…-after-…`, `backups/jars/Myau+UI_fixed.jar.pre-bug-report-20261007`. Scaffold is unchanged (still the v1.2.0 version).
+
+### 2026-10-07 — Report goes straight to Discord through a relay
+The user chose the safest option: a **Cloudflare Worker relay** (`report-relay/` next to the mod, not in the mod) holds
+the Discord webhook as a secret, so neither the jar nor GitHub carries it. Worker guards: POST+JSON, header
+`X-Myau-Report: 1`, body ≤ 256 KB, report ≤ 200 KB and must contain "Myau Atlas bug report", 3 valid reports per IP per
+10 min (Cache API, per location; junk does not use the allowance), mentions neutralised (`allowed_mentions: []`,
+@everyone/@here broken, <@id> removed). Posts as a forum thread (`thread_name`), retrying without it for a plain channel;
+the full report is attached as `report.txt`. Tested locally with Node 24 against a fake webhook: 403 / 400 / 200×3 /
+429 / 405 as intended, file attached, mentions stripped.
+Client: `BugReport.send(description, result)` builds and saves on the game thread, POSTs on a daemon thread
+(`HttpURLConnection`, 8 s connect / 15 s read), and reports back on the game thread; on any failure it copies to the
+clipboard instead. Relay address: `RELAY_URL` in BugReport (empty until deployed), overridable by one https line in
+`config/Myau/report-relay.txt`. The Atlas **Report** button now sends; `.report [what happened]` sends with a
+description, `.report copy` only copies. Built, 261 tests pass; not installed yet (waiting for the Worker address).
+Relay deployed by the user (wrangler 4.148, Worker `myau-report`); a curl test report returned `sent`. The account
+subdomain carried the player's name, so it was changed to `myau-atlas` (old address now dead). `RELAY_URL` =
+`https://myau-report.myau-atlas.workers.dev/report`. **Installed** (game closed, gated): md5 e2767a0c, 62 mixins.
+**Rate limit fixed (same day).** The first relay counted reports in the Cache API, which stores nothing on
+`workers.dev` — so live, the limit did nothing (the local test had mocked a working cache). Now the counts are in a
+**KV namespace** (`RATE`, bound in `report-relay/wrangler.toml`): key per IPv4 address, or per **IPv6
+/64** (one connection can rotate addresses inside its /64), 3 valid reports per window, window = 10 min from the first
+report (key expiry). Verified **live without posting**: the test machine's key was seeded as used up with
+`wrangler kv key put`, a valid report then got HTTP 429 and nothing reached Discord; the key was deleted after.
+Local tests: junk does not count; three addresses in one /64 share one allowance. Also set `workers_dev = true`,
+`preview_urls = false` in wrangler.toml. Deployed version cb214f20.
+
+### 2026-10-07 — Report asks first
+The Atlas **Report** button now carries an amber warning triangle (drawn with Liquid lines, no font glyph needed) and
+opens a confirmation dialog over the window instead of sending: a large warning sign, "Send a bug report?", what is
+uploaded (versions, OptiFine, enabled modules and settings, latest flag / placement / Clutch logs, game warnings) and
+that names, tokens and IPs are removed, then **Cancel** / **Send**. While it is open it takes every click and key:
+Send or Enter sends; Cancel, Esc or a click outside the box closes it. `.report` in chat still sends directly (typing
+the command is the confirmation). **Installed** (game closed, gated): md5 417810e3, 62 mixins.
+Backup: `backups/src/AtlasClickGui.java.pre-report-confirm-20261007`.
+
+## 2026-10-07 — Vape 4.21 / LiquidBounce nextgen study of Scaffold and KillAura; plan; S1
+LiquidBounce nextgen was read from its Kotlin source; Vape 4.21 is described from its behaviour.
+Main lessons: Vape's Scaffold is fully vanilla-shaped (camera turned in whole mouse counts, keys really pressed, the
+game's own right-click only when the real crosshair is on a placeable face, a real sneak at edges); LiquidBounce uses
+silent rotations but verifies every interaction by a raycast along the rotation being sent, picks a stable aim point
+along the movement line, and crouches (Ledge) when the turn is not ready. Plan: Scaffold S1-S3, then KillAura K1-K4,
+**one at a time, each tested in game before the next**.
+**S1 (built, md5 ec6bf6f8; not installed — game running):** Scaffold `safe-walk` no longer clamps the player at the edge
+without crouching (the cause of Grim Simulation/GroundSpoof measured 2026-10-06). It crouches for real when, on the
+ground, the box shrunk by 0.2 a side, moved by this tick's motion and one block down touches nothing (Vape's test), and
+keeps crouching for a random 100-200 ms after; input ×0.3 as vanilla's sneak key does, after the SILENT strafe remap.
+`onSafeWalk` only confirms vanilla's crouch edge rule. Placement logic is unchanged (v1.2.0).
+Backups: `backups/src/Scaffold.java.pre-S1-edge-sneak-20261007`, `…S1-edge-sneak-20261007`.
+**Report rewritten LiquidBounce-first (same day), at the user's word ("看的是 liquid bounce").** Read in full: all 30
+Scaffold files, all 11 KillAura files, and the aiming / clicking / target-finding layers they use. Facts worth keeping:
+- LB decides the rotation at the **start of the tick** (RotationUpdateEvent → RotationManager.update, normalised to the
+  mouse GCD); interactions in that tick use it and are verified by a world raytrace from the current eye
+  (`verifyClick`: same clicked block, same face, legal height). Its OnTick timing even sends an extra PosRot before
+  the interaction so the server has the look first — LB knows the server judges with the look it already has.
+- Scaffold aim: Stabilized point (face trimmed 15 %, cut to the optimal line's side, nearest to the current look ray);
+  optimal line from the last two placements or the support block keeping the lateral offset, 8 directions with 30°
+  hysteresis; placement position predicted from the last 4 placements' offsets to the fall-off edge.
+- LB Scaffold's default SafeWalk is the silent "Safe" clamp (fine on 1.21, flagged on 1.8 Grim as measured here);
+  its OnEdge mode works on inputs (stop / invert / centre for 1-2 ticks, optional sneak) and is simulatable.
+  Ledge crouches when the turn needs ≥1 more tick; GodBridge's ledge simulates the next tick and jumps/sneaks if
+  that look cannot place. GodBridge looks: straight = move yaw ±45° (side of the block), pitch 75.7; diagonal = move
+  yaw, pitch 75.6.
+- KillAura: scan range = reach + random 2-3 blocks (aim before reach); attack only if the current rotation raycasts
+  the target in range; Human clicker = log-normal intervals (σ 0.45, mean on a per-combo CPS drawn from the range),
+  ≤2 per tick, reset after 250 ms idle; Snap timing turns only when the clicker will click on arrival; Lazy rotation;
+  ShortStop 3 %/1-2 t; Fail 3 %/5-10°.
+Plan re-ordered to follow LB: S1 (done, awaiting test), S2 no click on a big-turn tick, S3 Stabilized + optimal line,
+S4 LB GodBridge; K1 attack after all rotations, K2 scan range, K3 Human clicker, K4 Lazy/ShortStop/Fail, K5 Snap.
+**S1 installed** (game closed, gated): md5 ec6bf6f8, 62 mixins. Replaced jar: backups/jars/Myau+UI_fixed.jar.pre-S1-20261007.
+
+### 2026-10-07 18:57-19:00 — S1 measured on test.ccbluex.net: no Scaffold flags
+Seven Scaffold sessions: **zero GrimAC flags** (no Simulation, no GroundSpoof — 51 Simulation before S1), place log 201
+placements, **zero REJECT**. The place log's own last-sent-look ray still reads "miss" or another face on 135 of them,
+yet the server took every block — so that ray is not what Grim judges by here; do not use it as evidence of a bad
+click without a REJECT or a GrimAC line. The one LAGBACK (18:58:49) followed digging, not Scaffold.
+S2 (no click on a big-turn tick) was meant for REJECTs; with none measured it is **not done** unless they come back.
+
+### 2026-10-07 — S3: stabilized aim (built, md5 3eb44055; not installed — game running)
+The user reports Scaffold still draws silent flags. Evidence in the S1 place log: 135 of 201 clicks were not on the
+clicked face along the look the server already had (83 miss, 52 another face) — accepted by Grim, but exactly what a
+stricter check catches. S3 changes **only the aim** (S1's edge crouch and the click timing stay):
+1. For the turning modes, when the last reported look already places a block in a wanted cell (`lookHit`), that look is
+   kept — no turn, the click uses the look the server knows (LiquidBounce's Stabilized intent).
+2. Otherwise the aim point is the one with the least turn from the **sent** look (it was from the last target), and aim
+   points stay off the outer 15 % of the face (`aimOffsets`, LiquidBounce's trimFace).
+Expected: far fewer "ray miss / side" lines in the place log; no new Grim flags. Backups:
+`backups/src/Scaffold.java.pre-S3-stabilized-20261007`, `…S3-stabilized-20261007`.
+
+- 2026-10-07 installed S3 (md5 3eb44055cba673b5bab3998458c7733e) as mods/Myau+UI_fixed.jar with the game closed; previous jar (S1, ec6bf6f8) saved as backups/jars/Myau+UI_fixed.jar.pre-S3-20261007.
+
+## 2026-10-07 S3 test results and S4: LiquidBounce GodBridge for the GODBIRGDE mode
+
+**S3 test (19:08–19:13, S3 jar 3eb44055).** The user reports that Grim flags were few but Polar flagged a lot, and that the S1 test was too short to count as clean. The Grim log for this session has RotationPlace x17, AirLiquidPlace x10, MultiPlace x4 and NoFall x5, almost all while towering (face up, rot 229.5) or jump-bridging. There are also two Simulation/GroundSpoof bursts at 19:12:16 and 19:12:33, during knockback and tower.
+
+Polar is the anticheat on play.pika-network.net (servers.txt fingerprint). Its alerts are not shown to the player, so they are not in any log here. The Pika placement log (19:10:30–19:11:20, 140 placements) shows:
+- **Settings in use:** rotations=GODBIRGDE, turn-speed 180, sprint VANILLA, safe-walk off, keep-y NONE, and the player jumping while bridging.
+- **Large turns on click ticks:** 30–37 degrees every few placements. The old GODBIRGDE case only set the yaw while `!canRotate`; the face loop then re-aimed at the block every tick.
+- **Long reaches:** placements at 4.4–4.5 blocks from the eye while jumping.
+- **Look did not hit the face:** about 75% of clicks were "ray miss/side".
+
+**S4.** `rotations=GODBIRGDE` now behaves like LiquidBounce nextgen's ScaffoldGodBridgeTechnique:
+- **Look** (`godBridgeRotation`):
+  - movingYaw = round((movement yaw + 180) / 45) * 45.
+  - Straight: yaw = movingYaw ± 45, pitch 75.7. The side follows LB's isOnRightSide test, flipped when leaning off the block with air ahead.
+  - Diagonal: yaw = movingYaw, pitch 75.6.
+  - No keys pressed: yaw = floor(aimed yaw / 90) * 90 + 45, pitch 75.
+- **Aim:** the look is not aimed at the block. hitVec is only a placeholder; onUpdateClick still clicks only where the sent look lands on a wanted cell (lookHit), so a look that misses clicks nothing. The S3 "keep the current look" shortcut is skipped in this mode. The look is reached with the normal turn-speed and humanize stepping. Once there, RotationEngine.step returns it unchanged (total < 0.05), so the look holds still the way LB's does.
+- **Ledge** (`godBridgeLedge`, in onMoveInput): this mode only, whatever safe-walk is set to.
+  - The player crouches for the tick (real sneak, input × 0.3, as in S1) when:
+    - the box after this tick's motion, shrunk by 0.2 per side, has nothing under it; and
+    - the look sent this tick (recorded in onUpdateClick), traced from the eye after the move, would not land on a valid side face (not UP) of a solid block, with the new cell replaceable, on the layer under the feet, and under the moved box.
+  - It always crouches at the edge with fewer than 3 blocks in hand (LB forceSneakBelowCount).
+  - LB's default ledge action is JUMP; this uses LB's SNEAK action instead, because a real crouch is what S1 measured clean on Grim.
+- **Tower and other modes:** unchanged.
+
+**Files.**
+- Source: backups/src/Scaffold.java.pre-S4-godbridge-20261007, Scaffold.java.S4-godbridge-20261007.
+- Config: backups/config/default.json.pre-S4-20261007.
+- Build: md5 75274f48358cea975fd07689ac0da9a9.
+
+**What to look for when testing** with GODBIRGDE on flat bridging:
+- "rot" in places-*.txt near 0 on most placements;
+- "dist" around 2–3, not 4.5;
+- "ray face" being most of the placements;
+- no new Grim flags;
+- no falling at the edge.
+
+- 2026-10-07 installed S4 (md5 75274f48358cea975fd07689ac0da9a9) with the game closed; S3 jar saved as backups/jars/Myau+UI_fixed.jar.pre-S4-20261007. Install checks: 62 classes under myau/mixin, one Myau jar in mods.
+
+### 2026-10-07 S4b: GodBridge without the crouch
+The user wants GodBridge with no crouching. The S4 ledge crouch has been removed: `godBridgeLedge`, its call in onMoveInput, and the `sentLookYaw`/`sentLookPitch` fields.
+
+GODBIRGDE now does only two things:
+- holds LiquidBounce's fixed look;
+- clicks when that look lands on a wanted face.
+
+No ledge action is taken. S1's edge crouch still runs only when safe-walk is turned on, and the user has it off.
+
+**Files.**
+- Backups: backups/src/Scaffold.java.pre-S4b-nosneak-20261007 and Scaffold.java.S4b-nosneak-20261007.
+- Build: md5 9ec003ec9811fbe2dd324c28e48a7443. Not installed at first, because the game was running.
+- 2026-10-07 installed S4b (md5 9ec003ec9811fbe2dd324c28e48a7443) with the game closed; the S4 jar was saved as backups/jars/Myau+UI_fixed.jar.pre-S4b-20261007. Install checks: 62 classes under myau/mixin, one Myau jar in mods.
