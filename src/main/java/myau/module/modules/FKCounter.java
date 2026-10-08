@@ -8,6 +8,7 @@ package myau.module.modules;
 // Adapted from Expo FKCounter (chat-driven final-kill attribution per scoreboard team).
 // Rebuilt defensively: counts any chat line with FINAL KILL, resolves the killer
 // team from tab info, degrades to an unknown bucket. No pasted code.
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.event.EventTarget;
 import myau.event.types.EventType;
 import myau.events.LoadWorldEvent;
@@ -154,7 +155,11 @@ public class FKCounter extends Module {
         GlStateManager.scale(scaleValue, scaleValue, 1.0F);
         if (this.background.getValue()) {
             int width = boxWidth;
-            Gui.drawRect(-2, -2, width + 2, mc.fontRendererObj.FONT_HEIGHT + 1, new Color(0, 0, 0, 120).getRGB());
+            if (HudPanel.active()) {
+                HudPanel.panel(-2, -2, width + 2, mc.fontRendererObj.FONT_HEIGHT + 1);
+            } else {
+                Gui.drawRect(-2, -2, width + 2, mc.fontRendererObj.FONT_HEIGHT + 1, new Color(0, 0, 0, 120).getRGB());
+            }
         }
         mc.fontRendererObj.drawStringWithShadow(text, 0.0F, 0.0F, 16777215);
         GlStateManager.popMatrix();

@@ -98,7 +98,8 @@ public class HitCheck extends Module {
      */
     public final IntProperty invulnHurtTime = new IntProperty("invuln-hurt-time", 1, 0, 10);
 
-    public final ModeProperty hud = new ModeProperty("hud", 2, new String[]{"NONE", "COMPACT", "LIST"});
+    /* NONE by default since 2026-10-08: the owner wants the screen clean; the log file still records everything. */
+    public final ModeProperty hud = new ModeProperty("hud", 0, new String[]{"NONE", "COMPACT", "LIST"});
     public final IntProperty hudX = new IntProperty("hud-x", 4, 0, 800, () -> this.hud.getValue() != 0);
     public final IntProperty hudY = new IntProperty("hud-y", 120, 0, 600, () -> this.hud.getValue() != 0);
     public final IntProperty hudLines = new IntProperty("hud-lines", 4, 1, 10, () -> this.hud.getValue() == 2);

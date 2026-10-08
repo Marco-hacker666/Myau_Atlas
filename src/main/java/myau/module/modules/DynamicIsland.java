@@ -1,5 +1,6 @@
 package myau.module.modules;
 
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.ui.UiMode;
 import myau.ui.hud.HudLayout;
 import myau.property.properties.IntProperty;
@@ -68,11 +69,15 @@ public class DynamicIsland extends Module { // nah bro i took 2 hour just to did
                 HudLayout.ints(this.offsetX, 1, this.offsetY, 1));
 
         // Glassmorphism Blur Pass
-        myau.util.shader.BlurUtils.prepareBlur();
-        RoundedUtils.drawRoundedRect(x, y, width, height, this.radius, 0xFFFFFFFF);
-        myau.util.shader.BlurUtils.blurEnd(2, 4.0f);
+        if (HudPanel.active()) {
+            HudPanel.panel(x, y, x + width, y + height);
+        } else {
+            myau.util.shader.BlurUtils.prepareBlur();
+            RoundedUtils.drawRoundedRect(x, y, width, height, this.radius, 0xFFFFFFFF);
+            myau.util.shader.BlurUtils.blurEnd(2, 4.0f);
 
-        drawBackground(x, y, width, height);
+            drawBackground(x, y, width, height);
+        }
 
         float textY = y + (height - (fr != null ? fr.getHeight() : mc.fontRendererObj.FONT_HEIGHT)) / 2f;
         float startX = x + 12f;

@@ -46,7 +46,7 @@ final class ModuleDocsEn {
         d("Hitflick", "Flicks the view away on a hit and back, to steer the knockback.");
         d("ServerLag", "Holds back some server packets to simulate a lagging server.");
         d("FakeLag", "Delays your outgoing movement so the server's copy of you runs behind, for the first hit.");
-        d("HitSelect", "Lets an attack through only when it suits you, e.g. when it costs less knockback.");
+        d("HitSelect", "Lets an attack through only when it suits you, e.g. when it costs less knockback. ACTIVE also decides KillAura's hits.");
         d("MoreKB", "Resets sprint on attack so each hit deals more knockback.");
         d("Criticals", "Makes attacks critical hits (+50% damage) by packets or small hops.");
         d("FastBow", "Draws and shoots the bow faster.");
@@ -104,6 +104,9 @@ final class ModuleDocsEn {
         d("LongJump", "Jumps further.");
         d("Jesus", "Walk on water.");
         d("NoSlow", "No slowdown while using items (blocking, eating, drawing a bow).");
+        help("HUD", "hud-theme", "How every HUD draws. JELLO: LiquidBounce's JelloBounce theme (black at 45%, soft shadow, rounded cards, flush module list). CLASSIC: each HUD's older drawing.");
+        d("NoItemRelease", "Does not send the release-use-item packet when you let go of right click; the server still sees the item in use, the client stops as usual (from Slinky).");
+        help("NoItemRelease", "safe-release", "Send the withheld release before the movement packet of the first tick you move or sprint (avoids Grim NoSlow); off = never send it.");
         d("NoJumpDelay", "Removes the delay between consecutive jumps.");
         d("SafeWalk", "Stops you walking off block edges, as if sneaking.");
         d("Eagle", "Sneaks automatically at edges, for bridging backwards.");
@@ -372,11 +375,17 @@ final class ModuleDocsEn {
         help(ka, "MaxCPS", "Highest attacks per second.");
         help(ka, "AttackRange", "Distance at which it actually attacks (blocks). Vanilla is 3.0.");
         help(ka, "SwingRange", "Distance at which it starts turning and swinging; a little more than the attack range.");
+        help(ka, "RotationTiming", "Normal: always aim. Snap: turn only when the click will be due as the aim lands (LiquidBounce).");
+        help(ka, "LazyRotation", "Do not turn while the look already hits the target (LiquidBounce).");
+        help(ka, "ShortStop", "Now and then (3% a tick) almost stop turning for 1-2 ticks, like a human (LiquidBounce).");
+        help(ka, "FailAim", "Now and then (3% a tick) aim 5-10 degrees off for 1-4 ticks, like a human miss (LiquidBounce).");
+        help(ka, "Raycast", "Enemy: if the look hits another enemy first, hit that one and make it the target, as a real crosshair would. None: always the chosen target (LiquidBounce).");
+        help(ka, "ExitClick", "When the target is about to leave attack range next tick, the next click comes one tick early (LiquidBounce).");
         help(ka, "ScanExtra", "Blocks beyond the swing range at which it already turns to the target, without swinging; +-0.5 per target; 0 = turn from the swing range only (LiquidBounce ScanRange).");
         help(ka, "RequirePress", "Only attack while the attack key is held.");
         help(ka, "AllowMining", "With the crosshair on a block and the attack key held, mine instead of attacking.");
         help(ka, "InventoryCheck", "No attacks while an inventory or chest screen is open.");
-        help(ka, "auto-block", "How it blocks. LEGIT: hit and raise the sword, lower it next tick, like a real block hit.");
+        help(ka, "auto-block", "How it blocks. LEGIT: hit and raise the sword, lower it next tick, like a real block hit. LiquidBounce: on a click tick lower, hit and raise again at once; blocking between clicks; lowered out of swing range.");
         help(ka, "AutoBlockCPS", "Attack speed while blocking.");
         help(ka, "AutoBlockRange", "Raise the sword when the target is within this distance.");
         help(ka, "AutoBlockRequirePress", "Only block while the use key is held.");

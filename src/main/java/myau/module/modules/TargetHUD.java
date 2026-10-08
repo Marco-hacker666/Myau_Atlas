@@ -1,5 +1,6 @@
 package myau.module.modules;
 
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.Myau;
 import myau.enums.ChatColors;
 import myau.event.EventTarget;
@@ -58,10 +59,18 @@ public class TargetHUD extends Module {
     private static final DecimalFormat healthFormat = new DecimalFormat("0.0", new DecimalFormatSymbols(Locale.US));
     private static final DecimalFormat diffFormat = new DecimalFormat("+0.0;-0.0", new DecimalFormatSymbols(Locale.US));
     private static final int MYAU_STYLE_START = 8;
+    /** JelloBounce's TargetHud.svelte (2026-10-08), the default: drawn by drawJelloStyle. */
+    private static final int JELLO_STYLE = 15;
+    /* JELLO animation state: the bar's thumb (ease-out 0.3s) and the lost-health
+       trail (0.6s) as in HealthProgress.svelte, per target. */
+    private EntityLivingBase jelloEntity;
+    private float jelloThumb;
+    private float jelloTrail;
+    private long jelloLastNanos;
 
-    public final ModeProperty style = new ModeProperty("style", 0, new String[]{
+    public final ModeProperty style = new ModeProperty("style", 15, new String[]{
             "DEFAULT", "RAVENBS-MODERN", "RAVENBS-LEGACY", "FACE", "THREED", "SIMPLE", "CIRCLE", "BlueDEV",
-            "ASTOLFO", "EXHIBITION", "MOON", "RISE", "NEVERLOSE", "TENACITY", "Astolfo"
+            "ASTOLFO", "EXHIBITION", "MOON", "RISE", "NEVERLOSE", "TENACITY", "Astolfo", "JELLO"
     });
     public final ModeProperty color = new ModeProperty("color", 0, new String[]{"DEFAULT", "HUD"}, this::isOpenMyauStyle);
     public final ModeProperty animMode = new ModeProperty("Anim Mode", 0, new String[]{"ELASTIC", "SCALE"}, this::isMyauPlusStyle);
@@ -113,7 +122,7 @@ public class TargetHUD extends Module {
     }
 
     private boolean isMyauPlusStyle() {
-        return this.style.getValue() >= MYAU_STYLE_START;
+        return this.style.getValue() >= MYAU_STYLE_START && this.style.getValue() != JELLO_STYLE;
     }
 
     private int getMyauPlusStyle() {
@@ -278,7 +287,151 @@ public class TargetHUD extends Module {
             drawRavenStyle(styleMode - 3, entity);
         } else if (styleMode == 7) {
             drawBlueDevStyle(entity);
+        } else if (styleMode == JELLO_STYLE) {
+            drawJelloStyle(entity);
         }
+    }
+
+    /*
+     * JelloBounce TargetHud.svelte, at GUI scale (half its CSS px): a 250x79
+     * card (125x39.5) of black at 45% with 12px corners and the soft halo; the
+     * head (rounded 8px) at the left with a red wash for 250ms after damage;
+     * the name at 20px; a heart and the health at 20px in #c8c8c8; Winning /
+     * Losing / Draw on the right at 15px (green / red / orange, half grey);
+     * and the bar: black at 20% under a #c8c8c8 thumb, with the health just
+     * lost trailing behind it in #646464. Scales in on appearing (expoOut).
+     */
+    private void drawJelloStyle(EntityLivingBase entity) {
+        float appear = this.animatedScale;
+        if (fadeTimer != null && !fadingIn && fadeTimer.getElapsedTime() >= 400) {
+            this.target = null;
+            fadeTimer = null;
+            fadingEntity = null;
+            return;
+        }
+        if (appear <= 0.0F) {
+            return;
+        }
+        float eased = 1.0F - (float) Math.pow(2.0, -10.0 * appear);
+        float w = 125.0F;
+        float h = 39.5F;
+        ScaledResolution sr = new ScaledResolution(mc);
+        float s = this.scale.getValue();
+        float posX = this.offX.getValue().floatValue() / s;
+        switch (this.posX.getValue()) {
+            case 1:
+                posX += sr.getScaledWidth() / s / 2.0F - w / 2.0F;
+                break;
+            case 2:
+                posX = -posX + sr.getScaledWidth() / s - w;
+                break;
+            default:
+                break;
+        }
+        float posY = this.offY.getValue().floatValue() / s;
+        switch (this.posY.getValue()) {
+            case 1:
+                posY += sr.getScaledHeight() / s / 2.0F - h / 2.0F;
+                break;
+            case 2:
+                posY = -posY + sr.getScaledHeight() / s - h;
+                break;
+            default:
+                break;
+        }
+        float ownHp = mc.thePlayer.getHealth() + mc.thePlayer.getAbsorptionAmount();
+        float hp = HealthUtil.resolve(entity) + entity.getAbsorptionAmount();
+        float maxHp = Math.max(1.0F, entity.getMaxHealth() + entity.getAbsorptionAmount());
+        float ratio = Math.max(0.0F, Math.min(1.0F, hp / maxHp));
+        long nowNanos = System.nanoTime();
+        float dt = this.jelloLastNanos == 0L ? 0.016F : Math.min(0.1F, (nowNanos - this.jelloLastNanos) / 1.0E9F);
+        this.jelloLastNanos = nowNanos;
+        if (entity != this.jelloEntity) {
+            this.jelloEntity = entity;
+            this.jelloThumb = ratio;
+            this.jelloTrail = ratio;
+        }
+        this.jelloThumb += (ratio - this.jelloThumb) * (1.0F - (float) Math.exp(-dt / 0.1F));
+        this.jelloTrail += (this.jelloThumb - this.jelloTrail) * (1.0F - (float) Math.exp(-dt / 0.2F));
+        float thumb = this.jelloThumb;
+        float trail = Math.max(thumb, this.jelloTrail);
+        /* Scaled in and faded together (the theme's transition:scale). */
+        int textAlpha = Math.max(4, Math.round(Math.min(1.0F, eased) * 255.0F)) << 24;
+
+        GlStateManager.pushMatrix();
+        GlStateManager.scale(s, s, 1.0F);
+        GlStateManager.translate(posX + w / 2.0F, posY + h / 2.0F, 0.0F);
+        GlStateManager.scale(eased, eased, 1.0F);
+        GlStateManager.translate(-w / 2.0F, -h / 2.0F, 0.0F);
+        GlStateManager.disableDepth();
+        GlStateManager.enableBlend();
+
+        HudPanel.rounded(0.0F, 0.0F, w, h, HudPanel.CARD_RADIUS, Math.min(1.0F, eased), true);
+
+        float head = 30.5F;
+        float hx = 4.5F;
+        float hy = 4.5F;
+        if (entity instanceof EntityPlayer) {
+            drawMyauPlusFace(entity, hx, hy, head, head, 4.0F);
+        } else {
+            HudPanel.fill(hx, hy, hx + head, hy + head, 4.0F, 0x40FFFFFF);
+        }
+        long sinceHit = System.currentTimeMillis() - this.damageFlashTime;
+        if (sinceHit < 250L) {
+            /* The red wash fades out over 250ms (out:fade). */
+            int wash = Math.round(0x66 * (1.0F - sinceHit / 250.0F));
+            HudPanel.fill(hx, hy, hx + head, hy + head, 4.5F, (wash << 24) | 0xFF0000);
+        }
+
+        myau.util.font.impl.FontRenderer nameFont = FontManager.productSans20;
+        myau.util.font.impl.FontRenderer smallFont = FontManager.productSans16;
+        String name = TeamUtil.stripName(entity);
+        float nameMax = 79.0F;
+        if (nameFont != null) {
+            while (name.length() > 1 && nameFont.getStringWidth(name) > nameMax) {
+                name = name.substring(0, name.length() - 1);
+            }
+            nameFont.drawString(name, 39.0, 5.0, textAlpha | 0xFFFFFF);
+        } else {
+            mc.fontRendererObj.drawString(mc.fontRendererObj.trimStringToWidth(name, (int) nameMax), 39, 5, -1);
+        }
+
+        mc.fontRendererObj.drawString("\u2764", 40, 17, textAlpha | 0xE6E6E6);
+        String health = String.valueOf((int) Math.floor(hp));
+        if (nameFont != null) {
+            nameFont.drawString(health, 49.0, 16.0, textAlpha | 0xC8C8C8);
+        } else {
+            mc.fontRendererObj.drawString(health, 49, 17, 0xFFC8C8C8);
+        }
+        String verdict;
+        int verdictColor;
+        if (ownHp > hp) {
+            verdict = "Winning";
+            verdictColor = 0xFF256525;
+        } else if (ownHp < hp) {
+            verdict = "Losing";
+            verdictColor = 0xFFA52626;
+        } else {
+            verdict = "Draw";
+            verdictColor = 0xFFD6AA57;
+        }
+        if (smallFont != null) {
+            smallFont.drawString(verdict, 117.0 - smallFont.getStringWidth(verdict), 18.5,
+                    textAlpha | (verdictColor & 0xFFFFFF));
+        } else {
+            mc.fontRendererObj.drawString(verdict, 117 - mc.fontRendererObj.getStringWidth(verdict), 18, verdictColor);
+        }
+
+        float barX = 40.0F;
+        float barY = 29.0F;
+        float barW = 78.0F;
+        float barH = 5.4F;
+        HudPanel.fill(barX, barY, barX + barW, barY + barH, 2.7F, 0x33000000);
+        HudPanel.fill(barX, barY, barX + barW * trail, barY + barH, 2.7F, 0xFF646464);
+        HudPanel.fill(barX, barY, barX + barW * thumb, barY + barH, 2.7F, 0xFFC8C8C8);
+
+        GlStateManager.enableDepth();
+        GlStateManager.popMatrix();
     }
 
     private void drawDefaultStyle(EntityLivingBase entity, float health, float abs, float heal) {
@@ -412,7 +565,9 @@ public class TargetHUD extends Module {
             case 0:
                 float bloomRadius = fadeTimer == null ? 2.0F : 2.0F * alpha / 255.0F;
                 float blurRadius = fadeTimer == null ? 3.0F : 3.0F * alpha / 255.0F;
-                if (RenderFixes.shouldUseShaders()) {
+                if (HudPanel.active()) {
+                    HudPanel.panel(n6, n7, n8, n9 + 13, true, alpha / 255.0F);
+                } else if (RenderFixes.shouldUseShaders()) {
                     BlurUtils.prepareBloom();
                     RoundedUtils.drawRound(n6, n7, n8 - n6, n9 + 13 - n7, 8.0F, true, new Color(0, 0, 0, maxAlphaBackground));
                     BlurUtils.bloomEnd(3, bloomRadius);
@@ -763,7 +918,10 @@ public class TargetHUD extends Module {
         int maxAlphaOutline = (int) (alpha * 110);
         int maxAlphaBackground = (int) (alpha * 210);
 
-        if (RenderFixes.shouldUseShaders()) {
+        boolean glassPane = HudPanel.active();
+        if (glassPane) {
+            HudPanel.panel(x, y, x + width, y + height, true, alpha);
+        } else if (RenderFixes.shouldUseShaders()) {
             BlurUtils.prepareBloom();
             RoundedUtils.drawRound(x, y, width, height, 10.0F, true, new Color(0, 0, 0, maxAlphaBackground));
             BlurUtils.bloomEnd(3, 2.0F);
@@ -788,9 +946,14 @@ public class TargetHUD extends Module {
                 (int) (alpha * 180)
         ).getRGB();
 
-        RenderUtil.drawRoundedRect(x, y, width, height, 10.0F, bgColor);
+        if (!glassPane) {
+            RenderUtil.drawRoundedRect(x, y, width, height, 10.0F, bgColor);
+        } else if (flashAlpha > 0) {
+            /* The damage flash, over the glass. */
+            HudPanel.fill(x, y, x + width, y + height, new Color(255, 40, 40, (int) (alpha * 90 * flashAlpha)).getRGB());
+        }
 
-        if (this.outline.getValue()) {
+        if (this.outline.getValue() && !glassPane) {
             int outlineColor = flashAlpha > 0
                     ? new Color(255, 60, 60, (int) (alpha * 255)).getRGB()
                     : new Color(0, 220, 255, (int) (alpha * 255)).getRGB();

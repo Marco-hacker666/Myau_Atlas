@@ -343,6 +343,23 @@ final class Liquid {
         return compiled;
     }
 
+    /**
+     * HudPanel (2026-10-08): the shaders and the framebuffer size the shape
+     * shader converts with, without copying the screen -- for HUD panes drawn
+     * with blur off, when no frame may have begun yet.
+     */
+    static void ensureCompiled() {
+        compile();
+        if (fbWidth != mc.displayWidth || fbHeight != mc.displayHeight) {
+            if (capture == null) {
+                fbWidth = mc.displayWidth;
+                fbHeight = mc.displayHeight;
+            } else {
+                ensureTargets(mc.displayWidth, mc.displayHeight);
+            }
+        }
+    }
+
     /** Shapes need only the shaders; the pane and lenses also need this frame's copies. */
     static boolean shapes() {
         return compiled;

@@ -90,28 +90,53 @@ public class HitSelect extends Module {
                 || mc.thePlayer == null || mc.theWorld == null) {
             return;
         }
+        EntityLivingBase target = mc.objectMouseOver != null
+                && mc.objectMouseOver.entityHit instanceof EntityLivingBase
+                ? (EntityLivingBase) mc.objectMouseOver.entityHit : null;
+        if (this.activeDrops(target)) {
+            drop(event);
+        }
+    }
+
+    /**
+     * K7 (2026-10-08): KillAura asks before an aura hit. True when ACTIVE
+     * would drop this click on {@code target} -- the same decision as for a
+     * hand click, so the aura and the mouse never follow two rules. The aura
+     * counts a dropped click as a click (its CPS rhythm goes on), as a hand
+     * click dropped here is still a click.
+     */
+    public boolean dropsAuraHit(EntityLivingBase target) {
+        if (!this.isEnabled() || this.mode.getValue() != 3 || mc.thePlayer == null || target == null) {
+            return false;
+        }
+        if (this.activeDrops(target)) {
+            this.dropped++;
+            return true;
+        }
+        return false;
+    }
+
+    /** ACTIVE's rule for one click; target may be null (nothing under the crosshair). */
+    private boolean activeDrops(EntityLivingBase target) {
         if (Math.random() * 100.0 >= this.chance.getValue()) {
-            return;
+            return false;
         }
         if (this.velocityTicks > 0) {
             if (this.preference.getValue() == 0) {
-                return;
+                return false;
             }
             if (mc.thePlayer.motionY > 0.0) {
-                drop(event);
-                return;
+                return true;
             }
             if (mc.thePlayer.onGround) {
-                return;
+                return false;
             }
         }
-        if (mc.objectMouseOver == null || mc.objectMouseOver.entityHit == null
-                || !(mc.objectMouseOver.entityHit instanceof EntityLivingBase)) {
-            return;
+        if (target == null) {
+            return false;
         }
-        EntityLivingBase target = (EntityLivingBase) mc.objectMouseOver.entityHit;
         if (!this.isMovingTowards(mc.thePlayer, target, 90.0)) {
-            return;
+            return false;
         }
         int expected = myau.management.HitTimer.ticks();
         int now = mc.thePlayer.ticksExisted;
@@ -121,12 +146,12 @@ public class HitSelect extends Module {
             int spacing = Math.max(2, expected * 2);
             if (now - this.lastAllowedTick >= spacing || now < this.lastAllowedTick) {
                 this.lastAllowedTick = now;
-                return;
+                return false;
             }
         } else if (target.hurtTime == expected + 1) {
-            return;
+            return false;
         }
-        drop(event);
+        return true;
     }
 
     private void drop(LeftClickMouseEvent event) {

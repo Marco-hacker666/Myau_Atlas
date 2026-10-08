@@ -1,5 +1,6 @@
 package myau.module.modules;
 
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.ui.UiMode;
 import myau.ui.hud.HudLayout;
 
@@ -53,10 +54,14 @@ public class WaterMark2 extends Module {
         int fillColor = UiMode.adapt(0x80000000);
         int hudColor = hud.getColor(System.currentTimeMillis()).getRGB();
 
-        RenderUtil.drawRoundedGradientOutlinedRectangle(
-                startX, startY, rectRight, rectBottom,
-                radius, fillColor, hudColor, hudColor
-        );
+        if (HudPanel.active()) {
+            HudPanel.panel(startX, startY, rectRight, rectBottom);
+        } else {
+            RenderUtil.drawRoundedGradientOutlinedRectangle(
+                    startX, startY, rectRight, rectBottom,
+                    radius, fillColor, hudColor, hudColor
+            );
+        }
 
         fr.drawString(
                 text,

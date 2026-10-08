@@ -14,7 +14,6 @@ import myau.property.properties.FloatProperty;
 import myau.property.properties.IntProperty;
 import myau.property.properties.ModeProperty;
 import myau.property.properties.PercentProperty;
-import myau.mixin.IAccessorEntity;
 import myau.util.*;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
@@ -29,7 +28,6 @@ import net.minecraft.network.play.server.S08PacketPlayerPosLook;
 import net.minecraft.network.play.server.S23PacketBlockChange;
 import net.minecraft.network.play.client.C0APacketAnimation;
 import net.minecraft.potion.Potion;
-import net.minecraft.potion.PotionEffect;
 import net.minecraft.util.*;
 import net.minecraft.util.MovingObjectPosition.MovingObjectType;
 import net.minecraft.world.WorldSettings.GameType;
@@ -50,8 +48,6 @@ import java.util.Map;
 public class Scaffold extends Module {
     private static final Minecraft mc = Minecraft.getMinecraft();
     private static final int ROTATION_GODBRIDGE = 4;
-    /** GodBridge: the most (|yaw| + |pitch| degrees) the look leaves its fixed angle to reach the edge. */
-    private static final float GODBRIDGE_EDGE_AIM = 25.0F;
     private static final int ROTATION_SNAP = 7;
     private static final int ROTATION_THREE_FMC = 8;
     private static final int ROTATION_SNAP2 = 9;
@@ -865,12 +861,14 @@ public class Scaffold extends Module {
                        at the block every tick -- 30-37 degree turns on the
                        click ticks in the 2026-10-07 Pika log. */
                     float[] fixed = godBridgeLook;
-                    if (aimDiff <= GODBRIDGE_EDGE_AIM
+                    if (aimDiff != Float.MAX_VALUE
                             && this.lookHit(blockData, fixed[0], fixed[1]) == null) {
-                        /* S4c: the fixed look misses the face from here, but
-                           a point on it is within a small turn of that look:
-                           aim at the edge there (this.yaw/pitch, from the
-                           face loop above, measured from the fixed look). */
+                        /* S4d (2026-10-08): the fixed look misses the face from
+                           here: aim at the point on it nearest that look
+                           (this.yaw/pitch, from the face loop above, measured
+                           from the fixed look) and place there. No turn limit
+                           and no ledge jump any more -- the user wants the
+                           block aimed at and placed, not a jump. */
                         fixed = new float[]{this.yaw, this.pitch};
                     }
                     this.yaw = fixed[0];
@@ -1054,8 +1052,6 @@ public class Scaffold extends Module {
            goes somewhere wanted (lookHit), as Clutch's post() does. */
         float sentYaw = event.getNewYaw();
         float sentPitch = event.getNewPitch();
-        this.sentLookYaw = sentYaw;
-        this.sentLookPitch = sentPitch;
         MovingObjectPosition along = null;
         if (this.rotationMode.getValue() != 0 && blockData != null && hitVec != null) {
             along = this.lookHit(blockData, sentYaw, sentPitch);
@@ -1327,11 +1323,6 @@ public class Scaffold extends Module {
             if (mc.thePlayer.onGround && this.stage > 0 && MoveUtil.isForwardPressed()) {
                 mc.thePlayer.movementInput.jump = true;
             }
-            if (this.rotationMode.getValue() == ROTATION_GODBRIDGE && this.godBridgeLedge()) {
-                /* S4c: GodBridge's Ledge with LiquidBounce's default action,
-                   JUMP. No crouch, by the user's choice. */
-                mc.thePlayer.movementInput.jump = true;
-            }
             if (this.safeWalk.getValue() && !mc.thePlayer.movementInput.sneak && this.edgeSneak()) {
                 /* S1 (2026-10-07): the edge is held by a real crouch, the way
                    Vape's Legit/EdgeSneak and LiquidBounce's Ledge do it, and
@@ -1397,9 +1388,6 @@ public class Scaffold extends Module {
     /** Until when the edge crouch is held after the edge is left (Vape's "sneak delay"). */
     private long edgeSneakUntil = 0L;
 
-    /** The look this tick's movement packet carries (onUpdateClick). */
-    private float sentLookYaw = Float.NaN;
-    private float sentLookPitch = Float.NaN;
     /** GodBridge: which side of the block row the player walks on. */
     private boolean godBridgeRightSide;
 
@@ -1434,48 +1422,6 @@ public class Scaffold extends Module {
             }
         }
         return new float[]{movingYaw + (this.godBridgeRightSide ? 45.0F : -45.0F), 75.7F};
-    }
-
-    /**
-     * S4c: GodBridge's Ledge (LiquidBounce ScaffoldGodBridgeTechnique.ledge,
-     * JUMP action). After this tick's move the player is at the edge, and the
-     * look this tick sends would not place a block from there: jump. Not with
-     * a jump boost that lifts two blocks or more (LB skips JUMP then).
-     */
-    private boolean godBridgeLedge() {
-        if (!mc.thePlayer.onGround || mc.thePlayer.capabilities.isFlying || mc.thePlayer.movementInput.sneak
-                || !MoveUtil.isForwardPressed() || Float.isNaN(this.sentLookYaw)) {
-            return false;
-        }
-        PotionEffect boost = mc.thePlayer.getActivePotionEffect(Potion.jump);
-        if (boost != null && boost.getAmplifier() >= 1) {
-            return false;
-        }
-        double mx = mc.thePlayer.motionX;
-        double mz = mc.thePlayer.motionZ;
-        AxisAlignedBB moved = mc.thePlayer.getEntityBoundingBox().offset(mx, 0.0, mz);
-        if (!mc.theWorld.getCollidingBoundingBoxes(mc.thePlayer,
-                moved.expand(-0.2, 0.0, -0.2).offset(0.0, -1.0, 0.0)).isEmpty()) {
-            return false;
-        }
-        Vec3 eye = new Vec3(mc.thePlayer.posX + mx, mc.thePlayer.posY + mc.thePlayer.getEyeHeight(),
-                mc.thePlayer.posZ + mz);
-        Vec3 look = ((IAccessorEntity) mc.thePlayer).callGetVectorForRotation(this.sentLookPitch, this.sentLookYaw);
-        double reach = mc.playerController.getBlockReachDistance();
-        MovingObjectPosition mop = mc.theWorld.rayTraceBlocks(eye,
-                eye.addVector(look.xCoord * reach, look.yCoord * reach, look.zCoord * reach));
-        if (mop != null && mop.typeOfHit == MovingObjectType.BLOCK && mop.sideHit != EnumFacing.UP) {
-            BlockPos support = mop.getBlockPos();
-            BlockPos cell = support.offset(mop.sideHit);
-            if (!BlockUtil.isReplaceable(support) && !BlockUtil.isInteractable(support)
-                    && BlockUtil.isReplaceable(cell)
-                    && cell.getY() == MathHelper.floor_double(mc.thePlayer.posY) - 1
-                    && moved.minX < cell.getX() + 1 && moved.maxX > cell.getX()
-                    && moved.minZ < cell.getZ() + 1 && moved.maxZ > cell.getZ()) {
-                return false;
-            }
-        }
-        return true;
     }
 
     /**

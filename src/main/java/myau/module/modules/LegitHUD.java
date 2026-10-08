@@ -1,5 +1,6 @@
 package myau.module.modules;
 
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.ui.UiMode;
 import myau.ui.hud.HudLayout;
 
@@ -113,8 +114,13 @@ public class LegitHUD extends Module {
 
     private int drawRow(String text, int x, int y, int color) {
         if (this.background.getValue()) {
-            Gui.drawRect(x - 3, y - 2, x + mc.fontRendererObj.getStringWidth(text) + 3,
-                    y + mc.fontRendererObj.FONT_HEIGHT + 2, UiMode.adapt(0x70000000));
+            if (HudPanel.active()) {
+                HudPanel.panel(x - 3, y - 2, x + mc.fontRendererObj.getStringWidth(text) + 3,
+                        y + mc.fontRendererObj.FONT_HEIGHT + 2);
+            } else {
+                Gui.drawRect(x - 3, y - 2, x + mc.fontRendererObj.getStringWidth(text) + 3,
+                        y + mc.fontRendererObj.FONT_HEIGHT + 2, UiMode.adapt(0x70000000));
+            }
         }
         mc.fontRendererObj.drawStringWithShadow(text, x, y, color);
         return mc.fontRendererObj.getStringWidth(text);
@@ -144,7 +150,17 @@ public class LegitHUD extends Module {
 
     private void drawKey(String label, int x, int y, boolean down, int color, int width) {
         int fill = down ? (color & 0x55FFFFFF) | 0xA0000000 : UiMode.adapt(0x70000000);
-        Gui.drawRect(x, y, x + width, y + 20, fill);
+        if (HudPanel.active()) {
+            if (down) {
+                float dx = width * 0.025F;
+                HudPanel.rounded(x + dx, y + 0.5F, x + width - dx, y + 19.5F, HudPanel.SMALL_RADIUS, 1.0F, true);
+                HudPanel.fill(x + dx, y + 0.5F, x + width - dx, y + 19.5F, HudPanel.SMALL_RADIUS, 0xB32E2E2E);
+            } else {
+                HudPanel.panel(x, y, x + width, y + 20);
+            }
+        } else {
+            Gui.drawRect(x, y, x + width, y + 20, fill);
+        }
         int labelWidth = mc.fontRendererObj.getStringWidth(label);
         mc.fontRendererObj.drawStringWithShadow(label, x + (width - labelWidth) / 2,
                 y + 6, down ? color : UiMode.adapt(0xFFE0E0E0));

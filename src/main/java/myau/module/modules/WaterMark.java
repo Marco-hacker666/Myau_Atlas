@@ -1,5 +1,6 @@
 package myau.module.modules;
 
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.ui.UiMode;
 import myau.ui.hud.HudLayout;
 import myau.property.properties.IntProperty;
@@ -33,8 +34,8 @@ import static net.minecraft.init.Items.string;
 public class WaterMark extends Module {
     private static final Minecraft mc = Minecraft.getMinecraft();
 
-    public final ModeProperty mode = new ModeProperty("Mode", 0,
-            new String[] { "Exhibition", "Modern", "WeedHack", "Vape" });
+    public final ModeProperty mode = new ModeProperty("Mode", 4,
+            new String[] { "Exhibition", "Modern", "WeedHack", "Vape", "Jello" });
 
     public final TextProperty modernText = new TextProperty("Text", "OpenMyau+", () -> mode.getValue() == 1);
     public final BooleanProperty shadow = new BooleanProperty("Shadow", true, () -> mode.getValue() == 1);
@@ -132,6 +133,9 @@ public class WaterMark extends Module {
             case 3:
                 renderVape(4.0f, 4.0f);
                 break;
+            case 4:
+                renderJello(4.0f, 4.0f);
+                break;
         }
         } finally {
             GlStateManager.popMatrix();
@@ -155,6 +159,10 @@ public class WaterMark extends Module {
             }
             case 2:
                 return new float[]{4.0f, 4.0f, mc.fontRendererObj.getStringWidth("weedhack premium beta") + 12.0f, 20.0f};
+            case 4: {
+                float[] size = jelloSize();
+                return new float[]{4.0f, 4.0f, size[0], size[1]};
+            }
             case 3: {
                 float width = 0.0f;
                 if (vapeTexture != null && vapeHeight > 0) {
@@ -367,6 +375,56 @@ public class WaterMark extends Module {
         drawStringWithShadow("]", currentX, y, grayColor);
 
         GlStateManager.popMatrix();
+    }
+
+    /*
+     * JelloBounce Watermark.svelte: "jello" at 40px with "bounce" beside it at
+     * 27px, a shade darker, both at 80% opacity, no background. Here "myau"
+     * and "atlas", in the thin Product Sans, at GUI scale (half the CSS px).
+     */
+    private static final float JELLO_BIG = 20.0f;
+    private static final float JELLO_SMALL = 13.5f;
+
+    private float jelloScale(FontRenderer font, float pixels) {
+        double height = font != null ? font.getHeight() : mc.fontRendererObj.FONT_HEIGHT;
+        return height <= 0.0 ? 1.0f : (float) (pixels / height);
+    }
+
+    private float jelloWidth(FontRenderer font, String text) {
+        return font != null ? (float) font.getStringWidth(text) : mc.fontRendererObj.getStringWidth(text);
+    }
+
+    /** {width, height} of the wordmark. */
+    private float[] jelloSize() {
+        FontRenderer font = FontManager.productSansLight;
+        float big = jelloScale(font, JELLO_BIG);
+        float small = jelloScale(font, JELLO_SMALL);
+        return new float[]{7.0f + jelloWidth(font, "myau") * big + 1.0f + jelloWidth(font, "atlas") * small, JELLO_BIG};
+    }
+
+    private void jelloText(FontRenderer font, String text, float x, float y, float scale, int color) {
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(x, y, 0.0f);
+        GlStateManager.scale(scale, scale, 1.0f);
+        if (font != null) {
+            font.drawString(text, 0.0, 0.0, color);
+        } else {
+            mc.fontRendererObj.drawString(text, 0, 0, color);
+        }
+        GlStateManager.popMatrix();
+    }
+
+    private void renderJello(float x, float y) {
+        FontRenderer font = FontManager.productSansLight;
+        float big = jelloScale(font, JELLO_BIG);
+        float small = jelloScale(font, JELLO_SMALL);
+        GlStateManager.enableBlend();
+        float textX = x + 3.5f;
+        jelloText(font, "myau", textX, y, big, 0xCCFFFFFF);
+        float smallX = textX + jelloWidth(font, "myau") * big + 1.0f;
+        /* Baselines together, as the inline span sits in the theme. */
+        float smallY = y + (JELLO_BIG - JELLO_SMALL) * 0.78f;
+        jelloText(font, "atlas", smallX, smallY, small, 0xCCE6E6E6);
     }
 
     private void renderWeedhackWatermark(float x, float y) {

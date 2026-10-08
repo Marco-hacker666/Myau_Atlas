@@ -1,5 +1,6 @@
 package myau.module.modules;
 
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.ui.UiMode;
 import myau.ui.hud.HudLayout;
 
@@ -97,14 +98,18 @@ public class Statistics extends Module {
         HUD hud = (HUD) Myau.moduleManager.modules.get(HUD.class);
         boolean shaders = hud != null && hud.shaders.getValue();
 
-        if (shaders) {
-            BlurUtils.prepareBlur();
-            RoundedUtils.drawRound(x, y, width, height, 6, Color.BLACK);
-            BlurUtils.blurEnd(2, 3);
-        }
+        if (HudPanel.active()) {
+            HudPanel.panel(x, y, x + width, y + height);
+        } else {
+            if (shaders) {
+                BlurUtils.prepareBlur();
+                RoundedUtils.drawRound(x, y, width, height, 6, Color.BLACK);
+                BlurUtils.blurEnd(2, 3);
+            }
 
-        Color c1 = applyOpacity(getAccentColor(), 0.8f);
-        RoundedUtils.drawRoundOutline(x, y, width, height, 6, 1.0f, UiMode.adapt(new Color(0, 0, 0, 100)), c1);
+            Color c1 = applyOpacity(getAccentColor(), 0.8f);
+            RoundedUtils.drawRoundOutline(x, y, width, height, 6, 1.0f, UiMode.adapt(new Color(0, 0, 0, 100)), c1);
+        }
 
         CFontRenderer font18 = FontProcess.getFont("sans");
 

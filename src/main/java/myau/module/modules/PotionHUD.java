@@ -5,6 +5,7 @@
  */
 package myau.module.modules;
 
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.event.EventTarget;
 import myau.events.Render2DEvent;
 import myau.module.Module;
@@ -147,7 +148,11 @@ public class PotionHUD extends Module {
         GlStateManager.disableDepth();
         GlStateManager.enableBlend();
         if (background.getValue()) {
-            RenderUtil.drawRect(0, 0, boxW, blockH, new Color(0, 0, 0, 110).getRGB());
+            if (HudPanel.active()) {
+                HudPanel.panel(0, 0, boxW, blockH);
+            } else {
+                RenderUtil.drawRect(0, 0, boxW, blockH, new Color(0, 0, 0, 110).getRGB());
+            }
         }
         for (int i = 0; i < lines.size(); i++) {
             mc.fontRendererObj.drawString(lines.get(i), PADDING, PADDING + i * LINE_HEIGHT, 0xFFFFFF, shadow.getValue());

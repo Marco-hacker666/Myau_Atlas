@@ -201,6 +201,7 @@ public class Myau {
         moduleManager.modules.put(Piercing.class, new Piercing());
         moduleManager.modules.put(BedwarUtils.class, new BedwarUtils());
         moduleManager.modules.put(NoSlow.class, new NoSlow());
+        moduleManager.modules.put(NoItemRelease.class, new NoItemRelease());
         moduleManager.modules.put(AutoAuth.class, new AutoAuth());
         moduleManager.modules.put(Capes.class, new Capes());
         moduleManager.modules.put(MoveFix.class, new MoveFix());

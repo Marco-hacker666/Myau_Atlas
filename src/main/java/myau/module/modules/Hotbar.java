@@ -1,5 +1,6 @@
 package myau.module.modules;
 
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.ui.UiMode;
 import myau.ui.hud.HudLayout;
 import myau.property.properties.IntProperty;
@@ -55,19 +56,23 @@ public class Hotbar extends Module {
                 HudLayout.ints(this.offsetX, 1, this.offsetY, 1));
         
         // Draw Glassmorphic Background
-        if (RenderFixes.shouldUseShaders()) {
-            BlurUtils.prepareBlur();
-            RoundedUtils.drawRound(startX, startY, width, height, 8.0F, Color.WHITE);
-            BlurUtils.blurEnd(2, 4.0F);
-        }
-
-        Color backgroundColor = UiMode.adapt(new Color(15, 15, 15, 100));
         ThemeStyle widget = ThemeStyle.active(WidgetColors.class);
-        if (widget != null) {
-            backgroundColor = widget.fill(backgroundColor, null, 0);
-        }
+        if (HudPanel.active()) {
+            HudPanel.panel(startX, startY, startX + width, startY + height);
+        } else {
+            if (RenderFixes.shouldUseShaders()) {
+                BlurUtils.prepareBlur();
+                RoundedUtils.drawRound(startX, startY, width, height, 8.0F, Color.WHITE);
+                BlurUtils.blurEnd(2, 4.0F);
+            }
 
-        RoundedUtils.drawRound(startX, startY, width, height, 8.0F, backgroundColor);
+            Color backgroundColor = UiMode.adapt(new Color(15, 15, 15, 100));
+            if (widget != null) {
+                backgroundColor = widget.fill(backgroundColor, null, 0);
+            }
+
+            RoundedUtils.drawRound(startX, startY, width, height, 8.0F, backgroundColor);
+        }
 
         // Selection Box Animation
         int currentItem = mc.thePlayer.inventory.currentItem;

@@ -6,6 +6,7 @@
 package myau.module.modules;
 
 // Tablist HUD with name or ping sort plus a game-mode filter. Render shape follows FKCounter.
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -116,7 +117,11 @@ public class PlayerList extends Module {
         GlStateManager.translate(baseX, baseY, 0.0F);
         GlStateManager.scale(scaleValue, scaleValue, 1.0F);
         if (this.background.getValue()) {
-            Gui.drawRect(-2, -2, width + 2, this.lines.size() * lineHeight, new Color(0, 0, 0, 120).getRGB());
+            if (HudPanel.active()) {
+                HudPanel.panel(-2, -2, width + 2, this.lines.size() * lineHeight);
+            } else {
+                Gui.drawRect(-2, -2, width + 2, this.lines.size() * lineHeight, new Color(0, 0, 0, 120).getRGB());
+            }
         }
         for (int i = 0; i < this.lines.size(); i++) {
             mc.fontRendererObj.drawStringWithShadow(this.lines.get(i), 0.0F, (float) (i * lineHeight), 16777215);

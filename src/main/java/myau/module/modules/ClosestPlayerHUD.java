@@ -7,6 +7,7 @@ package myau.module.modules;
 
 // Adapted from Expo ClosestPlayerHUD (nearest player per scoreboard team, own team first).
 // Rebuilt with openskid TeamUtil bot checks and BedTracker style HUD props. No pasted code.
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.event.EventTarget;
 import myau.event.types.EventType;
 import myau.events.LoadWorldEvent;
@@ -154,7 +155,11 @@ public class ClosestPlayerHUD extends Module {
         GlStateManager.translate((float) this.offsetX.getValue(), (float) this.offsetY.getValue(), 0.0F);
         GlStateManager.scale(scaleValue, scaleValue, 1.0F);
         if (this.background.getValue()) {
-            Gui.drawRect(-2, -2, width + 2, height, new Color(0, 0, 0, 120).getRGB());
+            if (HudPanel.active()) {
+                HudPanel.panel(-2, -2, width + 2, height);
+            } else {
+                Gui.drawRect(-2, -2, width + 2, height, new Color(0, 0, 0, 120).getRGB());
+            }
         }
         for (int i = 0; i < lines.size(); i++) {
             mc.fontRendererObj.drawStringWithShadow(lines.get(i), 0.0F, (float) (i * 10), 16777215);

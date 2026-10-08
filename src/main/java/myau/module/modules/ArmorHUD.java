@@ -1,5 +1,6 @@
 package myau.module.modules;
 
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.ui.UiMode;
 import myau.ui.hud.HudLayout;
 import myau.property.properties.IntProperty;
@@ -62,7 +63,11 @@ public class ArmorHUD extends Module {
             for (int i = 0; i < 4; i++) {
                 if (pieces[i] == null) continue;
                 int x = left + i * 21;
-                Gui.drawRect(x - 2, top - 2, x + 18, top + 31, UiMode.adapt(0x70000000));
+                if (HudPanel.active()) {
+                    HudPanel.panel(x - 2, top - 2, x + 18, top + 31);
+                } else {
+                    Gui.drawRect(x - 2, top - 2, x + 18, top + 31, UiMode.adapt(0x70000000));
+                }
             }
         }
         GlStateManager.enableRescaleNormal();

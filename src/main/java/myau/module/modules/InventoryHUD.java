@@ -5,6 +5,7 @@
  */
 package myau.module.modules;
 
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.event.EventTarget;
 import myau.events.Render2DEvent;
 import myau.module.Module;
@@ -111,7 +112,11 @@ public class InventoryHUD extends Module {
         GlStateManager.disableDepth();
         GlStateManager.enableBlend();
         if (background.getValue()) {
-            RenderUtil.drawRect(0, 0, boxW, boxH, new Color(0, 0, 0, 110).getRGB());
+            if (HudPanel.active()) {
+                HudPanel.panel(0, 0, boxW, boxH);
+            } else {
+                RenderUtil.drawRect(0, 0, boxW, boxH, new Color(0, 0, 0, 110).getRGB());
+            }
         }
         boolean showDura = durability.getValue();
         int rowY = PAD;
@@ -133,7 +138,11 @@ public class InventoryHUD extends Module {
     }
 
     private void drawSlot(ItemStack stack, int x, int y, boolean dura) {
-        RenderUtil.drawRect(x, y, x + 16, y + 16, new Color(255, 255, 255, 18).getRGB());
+        if (HudPanel.active()) {
+            HudPanel.fill(x, y, x + 16, y + 16, 0x14FFFFFF);
+        } else {
+            RenderUtil.drawRect(x, y, x + 16, y + 16, new Color(255, 255, 255, 18).getRGB());
+        }
         if (stack == null) {
             return;
         }

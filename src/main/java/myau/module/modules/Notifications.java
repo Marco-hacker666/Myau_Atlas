@@ -5,6 +5,7 @@
  */
 package myau.module.modules;
 
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.Myau;
 import myau.event.EventTarget;
 import myau.events.Render2DEvent;
@@ -113,14 +114,18 @@ public class Notifications extends Module {
         int depth = new Color(0, 0, 0, (int) (28 * alpha)).getRGB();
         int neutralText = new Color(238, 241, 245, (int) (242 * alpha)).getRGB();
 
-        RenderUtil.drawRoundedRect(renderX + 1.0F, y + 1.5F, boxWidth, boxHeight, radius + 1.0F,
-                depth, true, true, true, true);
-        RenderUtil.drawRoundedRect(renderX, y, boxWidth, boxHeight, radius,
-                panel, true, true, true, true);
-        RenderUtil.drawRoundedRect(renderX + 1.0F, y + 1.0F, boxWidth - 2.0F, boxHeight - 2.0F, radius - 1.0F,
-                hoverLayer, true, true, true, true);
-        RenderUtil.drawRoundedRectOutline(renderX + 0.5F, y + 0.5F, boxWidth - 1.0F, boxHeight - 1.0F,
-                radius, 1.0F, border, true, true, true, true);
+        if (HudPanel.active()) {
+            HudPanel.panel(renderX, y, renderX + boxWidth, y + boxHeight, true, alpha);
+        } else {
+            RenderUtil.drawRoundedRect(renderX + 1.0F, y + 1.5F, boxWidth, boxHeight, radius + 1.0F,
+                    depth, true, true, true, true);
+            RenderUtil.drawRoundedRect(renderX, y, boxWidth, boxHeight, radius,
+                    panel, true, true, true, true);
+            RenderUtil.drawRoundedRect(renderX + 1.0F, y + 1.0F, boxWidth - 2.0F, boxHeight - 2.0F, radius - 1.0F,
+                    hoverLayer, true, true, true, true);
+            RenderUtil.drawRoundedRectOutline(renderX + 0.5F, y + 0.5F, boxWidth - 1.0F, boxHeight - 1.0F,
+                    radius, 1.0F, border, true, true, true, true);
+        }
 
         this.drawProgress(entry, renderX, y, boxWidth, boxHeight, statusColor, alpha, 1.0F);
         this.drawNotificationText(text, renderX + paddingX + 1.0F, y + paddingY + 1.0F,

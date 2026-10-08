@@ -3626,3 +3626,412 @@ ModuleDocs and ModuleDocsEn: the CPS Mode help now explains Human.
 - Backups: backups/src/KillAura.java.pre-K3-20261007, KillAura.java.K3-20261007 and ModuleDocs(.En).java.pre-K3-20261007.
 - Build: 261 tests pass, md5 c740661e28a7b1ba097a1a1824c1516e. This jar includes K1, K2 and K3.
 - 2026-10-08 installed K1+K2+K3 (md5 c740661e28a7b1ba097a1a1824c1516e) with the game closed; the S4c jar was saved as backups/jars/Myau+UI_fixed.jar.pre-K123-20261007. Install checks: 62 classes under myau/mixin, one Myau jar in mods.
+- 2026-10-08 Synced the release folder and pushed commit 2ba6046 (S4c + K1-K3; 261 tests pass, 62 mixin classes). No tag or release was made for it.
+
+## 2026-10-08 — Scaffold S4d (aim instead of jump), KillAura K4/K5, LEGIT auto-block fix (K6)
+**User after playing K1–K3.**
+- Auto-block "一直 block，導致速度很慢"; the user said to continue and fix it along the way.
+- Scaffold should not keep jumping; it should aim at the block and place it.
+
+**S4d (Scaffold, GODBIRGDE).**
+- The S4c ledge jump is removed: `godBridgeLedge`, its onMoveInput call, `sentLookYaw/Pitch`, and two now-unused imports.
+- The edge-aim limit `GODBRIDGE_EDGE_AIM` (25°) is removed. Whenever the fixed look misses the face, the aim goes to the
+  face point nearest the fixed look, measured from the fixed look, and places there.
+- The fixed look is still kept whenever it places by itself.
+- Line endings: Scaffold.java had 2 stray CRLF lines in an LF file, from an earlier sed. They were normalised to LF.
+- Backups: backups/src/Scaffold.java.pre-S4d-aim-20261008 and Scaffold.java.S4d-aim-20261008.
+
+**K4 (KillAura, LiquidBounce rotation processors).** These apply to the Legit, Silent and LockView aim and are all off
+by default:
+- `LazyRotation`: no turn while the sent look already hits (aimedAt). This is LB findRotation with lazyRotation.
+- `ShortStop`: a 3% chance per tick to move only 0–10% of the way for 1–2 ticks (LB ShortStopRotationProcessor).
+- `FailAim`: a 3% chance per tick to add a 5–10° yaw and 0–2° pitch offset for 1–4 ticks (LB FailRotationProcessor).
+  The offset is applied to this tick's aim step, after stepTowards, without LB's failFactor term.
+- All three run in `processAim`, after stepTowards / getRotationsToBox and before the tremor and GCD steps.
+
+**K5 (Snap rotation timing).** New setting `RotationTiming`, Normal or Snap, default Normal. In Snap, `snapHold` skips
+the turn toward the target while:
+- the click is further away than the turn needs, i.e. ceil(attackDelayMS / 50) > ceil(angle to box centre /
+  MaxTurnSpeed), at least 1; and
+- the look is not already on the target.
+
+While held, nothing sets the rotation, so the existing smooth return (`returning` / stepBack) eases the look toward the
+camera. This is LB's SNAP: `if (!clicker.willClickAt(ticks)) return`.
+
+**K6 (LEGIT auto-block).**
+- **Cause:** case 7 blocked whenever `hasValidTarget()` was true, which means anyone within AutoBlockRange (6 for the
+  user). Chasing a target 3.3–6 blocks away was therefore done at blocking speed.
+- **Now:**
+  - It blocks only with the current target inside SwingRange.
+  - Otherwise it calls stopBlock() if the client is still blocking and the player is not digging or placing, then resets
+    blockTick, so the chase runs at full speed.
+  - The block/unblock alternation within reach is unchanged.
+- **Other auto-block modes** are untouched.
+
+**ModuleDocs and ModuleDocsEn:** RotationTiming, LazyRotation, ShortStop and FailAim were added to the 轉頭 group, with
+help text in both languages.
+
+**Files.**
+- Backups: backups/src/KillAura.java.pre-K456-20261008, KillAura.java.K456-20261008 and ModuleDocs(.En).java.pre-K456-20261008.
+- Build: 261 tests pass, md5 454496fbb64d7bc1290dc2521b706430. This jar includes S4d and K1–K6.
+- 2026-10-08 installed S4d + K1–K6 (md5 454496fbb64d7bc1290dc2521b706430) with the game closed; the previous jar was saved as backups/jars/Myau+UI_fixed.jar.pre-K456-20261008. Install checks: 62 classes under myau/mixin, one Myau jar in mods.
+
+## 2026-10-08 — NoItemRelease (from Slinky), and the HitSelect question
+**User:** asked whether a Rise-style Hit Select in KillAura (K7) would clash with the existing HitSelect module, then asked
+to add NoItemRelease, using Slinky's `NoItemRelease.java`. The user placed that file in the instance folder; a copy is in
+backups/src/NoItemRelease.java.from-user-20261008.
+
+**HitSelect.** There is no clash today, and no interplay either:
+- HitSelect ACTIVE (the user's mode) only filters `LeftClickMouseEvent`, i.e. the player's own clicks.
+- KillAura sends its own C02 and cancels the left click, so ACTIVE never sees an aura hit.
+- The other three modes (SECOND, CRITICALS, W_TAP) act on the C02 packet itself. They would cancel aura hits that were
+  already swung and applied locally.
+
+K7 is therefore planned as "KillAura asks HitSelect ACTIVE before a hit", not as a second implementation.
+
+**NoItemRelease.** The module file is used unchanged.
+- **What it does:** it drops the vanilla C07 RELEASE_USE_ITEM that the game sends when right click is let go, so the
+  server keeps the item in use. The client stops as usual.
+- **Modes:** CONSUMABLE (eat/drink, the default), SWORD (block) and ALL. Bows and rods are never covered.
+- **Wiring:**
+  - `MixinPlayerControllerMP.onStoppedUsingItem`:
+    - HEAD: if CancelUseEvent was not cancelled, call `beginVanillaRelease()`. It now `return`s after a cancel.
+    - New RETURN inject: `endVanillaRelease()`.
+  - `MixinNetworkManager.sendPacket(Packet)`:
+    - First call, for client packets: `claimVanillaRelease(packet)`.
+    - After `playerStateManager.handlePacket` and before Blink/Lag: if `dropVanillaRelease(packet)`, cancel. Atlas's own
+      bookkeeping therefore still sees the release.
+  - Registered in Myau.java and in ModuleCategories MOVEMENT next to NoSlow. ModuleDocs and ModuleDocsEn descriptions
+    added. The mixin class count is unchanged (62).
+- **Checked for bugs:**
+  - **Module-sent releases** carry a `myau.module.modules` frame on the stack, so they are never claimed:
+    - KillAura.stopBlock and NoSlow send C07 directly.
+    - FastBow calls onStoppedUsingItem itself, and bows are excluded anyway.
+  - **KillAura blocking:** KillAura.onCancelUse cancels the whole vanilla release while it blocks, so the window never
+    opens.
+  - **Window lifetime:** it is closed at RETURN and on every TickEvent.
+  - **A claim that is never dropped** (a listener cancelled the packet first) is forgotten when the window closes.
+  - **Flushing:** while LagManager is flushing, the drop is skipped and the release goes out.
+- **Risk, not a bug:**
+  - With the release withheld, the server and Grim or Polar keep the player "using an item". Full-speed movement or
+    sprint after letting go can then be flagged (Simulation / NoSlow), until the item finishes or the slot changes.
+  - SWORD and ALL make this likely while fighting. CONSUMABLE is the safest mode.
+- **Tests:** new `myau.util.NoItemReleaseTest`, 5 tests, all passing:
+  - inside the window: dropped once, by instance, first release only;
+  - outside the window: nothing dropped;
+  - other C07 actions: never claimed;
+  - claim forgotten when the window closes.
+  It lives in myau.util because a test frame in myau.module.modules would count as a module caller.
+
+**Files.**
+- Backups: backups/src/*.pre-NoItemRelease-20261008 and *.NoItemRelease-20261008.
+- Build: md5 fbb75829db6cb59721e535d8b35327f8. This jar includes S4d and K1–K6.
+- 2026-10-08 installed the NoItemRelease build (md5 fbb75829db6cb59721e535d8b35327f8) with the game closed; the previous jar was saved as backups/jars/Myau+UI_fixed.jar.pre-NoItemRelease-20261008. Install checks: 62 classes under myau/mixin, one Myau jar in mods.
+
+### 2026-10-08 NoItemRelease: safe-release (the user saw "NoSlow 嚴重被抓")
+**Measured.** test.ccbluex.net legacy (Grim), 19:04:17–19:04:34: 133 × `failed NoSlow`, plus LAGBACK ×4–10 bursts at
+sprint speed. This is the predicted risk, not a defect:
+- With the vanilla release dropped, Grim keeps the item in use.
+- It expects the 0.2× input and no sprint.
+- The client walks and sprints at full speed.
+
+**Fix.** New setting `safe-release`, default on.
+- The module records `withheld` when it drops a release.
+- `onUpdate`: an UpdateEvent PRE handler at HIGHEST, `whenDisabled`. While a release is withheld, it sends the C07
+  release via PacketUtil before that tick's movement packet, in either case:
+  - the module is off; or
+  - safe-release is on and the player moves or sprints (MoveUtil.isForwardPressed, isSprinting, or the sprint key).
+- **Order within a tick:** the release key is handled in runTick before the player's update, so a release while moving
+  is resent in the same tick, before the C03.
+- **Not claimed:** the resent release is sent from a module frame, outside the vanilla window.
+- `withheld` clears on:
+  - any C09 slot change;
+  - a C08 use (direction 255);
+  - any release;
+  - leaving the world.
+- **Effect:** the release now stays withheld only while standing still.
+- **safe-release off** gives the original Slinky behaviour.
+
+**Files.**
+- Help text: ModuleDocs and ModuleDocsEn.
+- Backups: backups/src/NoItemRelease.java.pre-safe-release-20261008 and NoItemRelease.java.safe-release-20261008.
+- Build: 266 tests pass (including NoItemReleaseTest), md5 e87f4450e4a1d07385ac299090deadf6.
+
+### 2026-10-08 NoItemRelease decision; KillAura K7 (HitSelect for aura hits) and K8 (LiquidBounce auto-block)
+**NoItemRelease.** The user chose "A": keep safe-release as built (full speed, release resent on the first moving tick).
+
+**K7.** KillAura now asks the user's HitSelect (mode ACTIVE) before an aura hit:
+- **Refactor:** HitSelect's ACTIVE rule moved out of `onClick` into `activeDrops(target)`, so a hand click and an aura
+  hit follow one rule. The rule covers chance, KB_REDUCTION/CRITICALS after own knockback, moving-towards, and the
+  hurt-time opening with its spacing. `onClick` keeps its old behaviour, target null included.
+- **Aura entry point:** new `dropsAuraHit(target)`. It also counts drops.
+- **KillAura side:** `performAttack` checks `hitSelectHolds()` after the delay and other-actions checks and before the
+  swing. A held click adds its interval (`attackDelayMS += getAttackDelay()`), the way a dropped hand click is still a
+  click, so the CPS rhythm and the chance roll per click are unchanged. There is no swing, no hit and no sprint
+  slowdown.
+- **Scope:** it covers Legit/Silent/LockView/Hypixel/LiquidBounce rotations (performAttack). The Advanced mode's own
+  attack path is not covered.
+- **Answer to the user's question:** no conflict. Before K7, ACTIVE never saw aura hits. The other HitSelect modes act
+  on C02 and would still cancel aura hits after the swing.
+
+**K8.** New auto-block mode `LiquidBounce` (index 10), using LB KillAuraAutoBlock with its defaults (Reblock 0,
+StopUsingItem):
+- **Target in SwingRange, on a tick the click is due** (attackDelayMS ≤ 0): stopBlock if blocking, then swap = true.
+  After the deferred attack, finishAttack therefore sends interact + use, which blocks again in the same tick.
+- **Between clicks:** block if not blocking.
+- **Out of SwingRange:** stopBlock, so the chase runs at full speed.
+- **Packet order in a click tick:** C07 release (onUpdate, LOW), C02 attack (afterRotations), C02 interact + C08 use.
+- **Note:** this is LB's same-tick unblock/hit/reblock. Strict 1.8 anticheats may dislike it, which is why LEGIT stays
+  the default choice.
+
+**ModuleDocs and ModuleDocsEn:** auto-block help describes LiquidBounce, and the HitSelect description notes that
+ACTIVE also decides KillAura hits.
+
+**Files.**
+- Backups: backups/src/*.pre-K78-20261008, KillAura.java.K78-20261008 and HitSelect.java.K78-20261008.
+- Build: 266 tests pass, md5 1026e00f18524fcf3d5df869e2cc9c20. This jar includes safe-release, NoItemRelease, S4d and K1–K8.
+- 2026-10-08 installed K7/K8 + safe-release (md5 1026e00f18524fcf3d5df869e2cc9c20) with the game closed; the previous jar was saved as backups/jars/Myau+UI_fixed.jar.pre-K78-20261008. Install checks: 62 classes under myau/mixin, one Myau jar in mods.
+
+### 2026-10-08 KillAura K10 (Raycast), K11 (ExitClick); K9 dropped — KillAura plan complete
+The user asked to finish KillAura, after asking whether KeepSprint or W-tap is better. The answer given was W-tap
+(SprintReset LEGIT):
+- On 1.8 the server clears sprint after a sprint hit, so KeepSprint keeps only client speed, not the knockback.
+- Grim's Simulation catches the missing slowdown.
+
+**K9 dropped.** A built-in KeepSprint would duplicate the existing KeepSprint module, and the recommendation is
+SprintReset.
+
+**K10 — `Raycast`** (None or Enemy, default Enemy). This is LB TRACE_ONLYENEMY.
+- In `afterRotations`, before the hit, `raycastRetarget` traces the final look within AttackRange against living,
+  collidable entities (border-grown boxes; eyes inside counts as distance 0).
+- If the first one is another valid target (isValidTarget: team, bot, FOV, walls), it becomes `target` and takes the
+  hit.
+- Blocks are not traced; ThroughWalls already governs walls.
+- Only the deferred path (K1 modes) uses it.
+
+**K11 — `ExitClick`** (default on). This is LB IgnoreWhenExitingRange, adapted to 1.8, which has no weapon cooldown.
+performAttack lets a click through up to one tick early (attackDelayMS ≤ 50) when all of these hold:
+- the target is within AttackRange now (box distance from the eyes);
+- it would be out of range next tick, with both entities extrapolated by this tick's movement;
+- target.hurtTime ≤ 7.
+
+The positive remainder is kept, so the interval after the early click is unchanged and the average CPS does not rise.
+
+**ModuleDocs and ModuleDocsEn:** both settings were added to the 出手 group, with help text in both languages.
+
+**Plan status.** K1–K8, K10 and K11 are done, and K9 is deliberately skipped. Defaults chosen so the user's current
+behaviour holds:
+- auto-block stays LEGIT;
+- CPS Mode stays as set;
+- all K4/K5 options are off.
+
+**Files.**
+- Backups: backups/src/KillAura.java.pre-K1011-20261008, KillAura.java.K1011-20261008 and ModuleDocs(.En).java.pre-K1011-20261008.
+- Build: 266 tests pass, md5 cd888b54e48a8ec68d944a5c311cba13.
+- 2026-10-08 installed K10/K11 (md5 cd888b54e48a8ec68d944a5c311cba13) with the game closed; the previous jar was saved as backups/jars/Myau+UI_fixed.jar.pre-K1011-20261008. Install checks: 62 classes under myau/mixin, one Myau jar in mods.
+
+## Backlog (2026-10-08): user request, NOT started
+- **HUD "liquid glass" + rounded shapes** (DONE 2026-10-08, see the HudGlass section below). A user asked for the on-screen HUD elements to get the Atlas ClickGUI's
+  Liquid Glass look (Liquid / Glass blur panels) and round shapes. The HUD elements include WaterMark, ArrayList/HUD,
+  ArmorHUD, EffectsHUD, TargetHUD, KeyStrokes, PotionHUD, InventoryHUD and DynamicIsland.
+- The owner said to record it only. Do not start until asked.
+
+## 2026-10-08 — HudGlass: the on-screen HUD in Liquid Glass with rounded panes (backlog item, now done)
+**User:** "做一下hud吧". This is the backlog request from players: HUD elements in the Atlas menu's Liquid Glass, with
+round shapes.
+
+**Design.** One shared renderer, one switch, and every HUD falls back to its old drawing when the switch is off.
+- **Module `HudGlass`** (Render, enabled by default):
+  - settings: `radius` 6 (0–12), `opacity` 55%, `blur` on, `rim` on, `shadow` on;
+  - a Render2DEvent handler at HIGHEST calls `HudPanel.newFrame()`.
+- **`myau.ui.impl.clickgui.atlas.HudPanel`** is public, the HUDs' door into the package-private `Liquid` renderer.
+  - `panel(x, y, x2, y2[, dropShadow[, fade]])` draws, in order:
+    - an optional shadow;
+    - the Liquid pane, i.e. the world blurred and refracted at the rim, with a dark tint at `opacity` (light tint in
+      light mode);
+    - an optional rim.
+  - `fill(...)` draws a rounded plain fill at the pane radius, used for pressed keys, inventory slots and the damage
+    flash.
+  - **Per-frame copy:** the world is copied and blurred once a frame (`Liquid.beginFrame`), lazily, by the first pane
+    with blur on.
+  - **Transform:** the modelview is read once per pane (glGetFloat), so panes land correctly inside each HUD's own
+    translate/scale. That is a handful of reads per frame.
+  - **GL state:** saved and restored exactly (texture2D, blend, alpha test, cull, depth). HUDs keep drawing their own
+    quads after the background with whatever state they had set up.
+  - **Liquid state:** Liquid's alpha and light are saved and restored, so the open ClickGUI is unaffected.
+  - Any throwable is swallowed, so the text still draws.
+- **`Liquid.ensureCompiled()`** is new. It compiles the shaders and sets the framebuffer size without copying the
+  screen, for panes with blur off before any frame has begun.
+
+**HUDs converted** (old drawing kept in the `else`):
+- ArmorHUD, EffectsHUD, PotionHUD, PlayerList, ClosestPlayerHUD, FKCounter.
+- LegitHUD: rows; keys get an accent fill when down.
+- KeyStrokes: a white fill when down.
+- InventoryHUD: box plus rounded slot fills.
+- HUD module list (MYAU interface): one pill per row (0.5 px apart, no drop shadow); the old blur/glow passes are
+  skipped.
+- WaterMark: a pane behind every style from `watermarkArea()`; WeedHack's stacked boxes are skipped.
+- WaterMark2, Hotbar, Statistics, FPScounter, DynamicIsland.
+- Notifications: the classic style, faded with the entry.
+- TargetHUD: the DEFAULT style and the Myau+ style (its colour/outline layers give way to the pane, and the damage flash
+  is drawn as a red fill over the glass).
+
+**Not converted:** the other 13 TargetHUD styles, and HUD's CREIDA interface. Each is a designed look of its own.
+
+**Files and build.**
+- Docs: ModuleDocs and ModuleDocsEn, the HudGlass description and its 5 settings.
+- Registration: Myau.java; ModuleCategories RENDER.
+- Backups: backups/src/pre-hudglass-20261008/ (before) and backups/src/hudglass-20261008/ (after).
+- Build: 266 tests pass, 62 mixin classes, md5 b0e3eea8411a092197a16576147c1888.
+- 2026-10-08 installed HudGlass (md5 b0e3eea8411a092197a16576147c1888) with the game closed; the previous jar was saved as backups/jars/Myau+UI_fixed.jar.pre-hudglass-20261008. Install checks: 62 classes under myau/mixin, one Myau jar in mods.
+
+### 2026-10-08 HudGlass CLEAN style (the owner found Liquid Glass ugly)
+**User.** Called the glass HUD ugly and sent a LiquidBounce nextgen "jellobounce" screenshot as the look wanted:
+- flat dark translucent panes with small corners (about 4);
+- no bevel, refraction, rim or shadow;
+- module-list rows as one flush stepped slab with square rows;
+- compact info panel, TargetHUD and key boxes.
+
+**Change.**
+- **`HudGlass.style`:** new setting, CLEAN (default) or LIQUID_GLASS. Defaults are now radius 4 and opacity 60. blur, rim
+  and shadow are shown only in LIQUID_GLASS.
+- **HudPanel, CLEAN:** `panel()` draws `flat()`, a single Liquid.rect rounded fill. The tint is the opacity over near
+  black (0x07080B), or near white in light mode. There is no frame copy, so CLEAN costs no blur pass.
+- **`HudPanel.row()`:** used by the module list. CLEAN draws a square-cornered flush slab; LIQUID_GLASS draws the earlier
+  pill, inset 0.5.
+- **Config:** HudGlass had not been saved to config yet, so the new defaults apply on first launch.
+- **Docs:** ModuleDocs and ModuleDocsEn explain `style`.
+
+**Files.**
+- Backups: backups/src/hudglass-clean-20261008/.
+- Build: 266 tests pass, md5 0f32595ac2959acdc9839d0f175a5a7c.
+- 2026-10-08 installed HudGlass CLEAN (md5 0f32595ac2959acdc9839d0f175a5a7c) with the game closed; the previous jar was saved as backups/jars/Myau+UI_fixed.jar.pre-hudclean-20261008. Install checks: 62 classes under myau/mixin, one Myau jar in mods.
+
+## 2026-10-08 — The HUD's default look is LiquidBounce's JelloBounce theme; HudGlass removed
+**User:** "去看 liquid bounce 的 jello bounce theme 怎麼做 hud 跟 target hud 的，不要多一格 hud class，直接改預設".
+
+**Source.** github.com/CCBlueX/LiquidBounce-Theme-JelloBounce, a CCBlueX-maintained fork of larryngton2/jellobounce.
+- It was shallow-cloned into the session scratchpad for reading only; nothing from it is in the jar.
+- Only measurements and colours were taken, from colors.scss, ArrayList, Effects, Key, Notification, TargetHud,
+  HealthProgress and Watermark .svelte.
+- **Values read:**
+
+| Element | Value |
+|---|---|
+| `$background-color` | black |
+| `$opacity` | 0.45 |
+| `$primary-shadow` | 0 0 50px rgba(0,0,0,.5) |
+| ArrayList rows | square corners, flush, 5×7 padding, tag #AAAAAA |
+| Effects | one block with 12px outer corners |
+| Key | 7px corners; active rgba(#2e2e2e, .7) at 95% scale, text #d3d3d3 |
+| Notifications | 12px corners |
+| TargetHud card | 250×79, 12px corners |
+| TargetHud avatar | rounded 8, red .4 damage wash for 250 ms |
+| TargetHud text | name 20px; heart and health 20px in #c8c8c8; Winning/Losing/Draw 15px in green/red/orange at grayscale 50% |
+| TargetHud bar | rgba(0,0,0,.2) under a #c8c8c8 thumb, #646464 for health just lost |
+| Watermark | "jello" 40px + "bounce" 27px darkened 10%, opacity .8, no background |
+
+**Changes.**
+- **HudGlass removed:** the class, its registration, its category entry and its docs. The owner wanted no extra HUD module.
+- **`HUD.hudTheme`:** new setting "hud-theme", JELLO (default) or CLASSIC. CLASSIC is every HUD's own older drawing.
+  `HudPanel.active()` reads it.
+- **HudPanel rewritten as the Jello painter.**
+  - `rounded()` draws the soft halo (Liquid.shadow, spread 12, alpha 0x40) and a black 45% fill.
+  - Card radius 6 and small radius 3.5 (the theme's 12px and 7px at GUI scale).
+  - `row()` is square-cornered. `fill()` draws bars, slots and pressed keys.
+  - Liquid Glass, blur and the per-frame copy are no longer used.
+- **Module list:** `row()` per row, flush.
+- **EffectsHUD:** one card behind all rows, instead of a box per row.
+- **KeyStrokes and LegitHUD keys:** Jello keys. Pressed shrinks to 95% with the #2e2e2e 70% fill, and the text is
+  dimmed to #d3d3d3.
+- **Notifications and TargetHUD cards:** radius 6.
+- **WaterMark:** new mode "Jello", now the default.
+  - Draws "myau" at 20 px and "atlas" at 13.5 px, a shade darker, both at 80%, in Product Sans Light scaled.
+  - The earlier "pane behind every watermark" is removed, and WeedHack's own boxes are restored.
+- **TargetHUD:** new style "JELLO" (index 15), now the default; `isMyauPlusStyle` excludes it. `drawJelloStyle`
+  builds the card from the values above:
+  - avatar via drawMyauPlusFace (stencil-rounded);
+  - Product Sans 20 for the name and health, 16 for the verdict;
+  - trail from animatedHealth;
+  - expoOut scale-in, and fade-out handling as in the other styles.
+- **The owner's config** (game closed, backed up to backups/config/default.json.pre-jello-20261008):
+  - WaterMark Mode Vape → Jello;
+  - TargetHUD style DEFAULT → JELLO;
+  - HUD hud-theme set to JELLO;
+  - the stale HudGlass entry removed.
+  - HUD colour (RAINBOW) left as the owner set it. Jello's text is white, which is CUSTOM1 in the code.
+
+**Files and build.**
+- Backups: backups/src/pre-jello-20261008/ (before) and backups/src/jello-20261008/ (after).
+- Build: 266 tests pass, 62 mixin classes, md5 765f9b82491e021e7b7a9a27d288963d.
+- Installed with the game closed; the previous jar is backups/jars/Myau+UI_fixed.jar.pre-jello-20261008.
+
+### 2026-10-08 Jello follow-up: module list, watermark off, Flags/Hits lists off
+**User:** "旁邊那欄沒有變", "我不要 myau atlas 浮水印", "flags hit 也可以移除（畫面上的）", with a screenshot. A crop of the screenshot
+showed the rows did get the Jello slab and shadow. They still read as the old list because:
+- the text was in the owner's RAINBOW colour;
+- the white edge bar was still drawn.
+
+**Code changes.**
+- **HUD MYAU list under JELLO:**
+  - names are white (ArrayList.svelte $text-color); tags stay #AAAAAA;
+  - the edge bar is not drawn;
+  - rows are 1.5 px wider a side (7 CSS px of padding, against the setting's 2).
+- **Defaults:** FlagDetector and HitCheck `hud` now default to NONE, with their log files unchanged. HitCheck
+  chat-summary already defaulted to false.
+
+**Owner's config edits** (pending until the game is closed):
+- WaterMark off;
+- FlagDetector hud → NONE;
+- HitCheck hud → NONE and chat-summary → false.
+
+**Build:** 266 tests pass, md5 1019a9b46bf32f068f7b1a78631c3ddd. Not installed yet, because the game was running.
+- 2026-10-08 installed the Jello follow-up (md5 1019a9b46bf32f068f7b1a78631c3ddd) with the game closed; the previous jar was saved as backups/jars/Myau+UI_fixed.jar.pre-jello2-20261008. Install checks: 62 classes under myau/mixin, one Myau jar in mods. Config backed up to backups/config/default.json.pre-jello2-20261008, then: WaterMark off, FlagDetector hud NONE, HitCheck hud NONE, HitCheck chat-summary false.
+
+### 2026-10-08 Module-list rows rounded
+**User:** "有出現，但我要 round". The Jello rows showed, but the owner wants rounded rows.
+
+**Change.** `HudPanel.row()` now uses `SMALL_RADIUS` (3.5) instead of 0. The rows stay flush and shadowed; the theme
+itself draws them square.
+
+**Files and install.**
+- Backup: backups/src/jello-20261008/HudPanel.java.pre-round.
+- Build: 266 tests pass, md5 8d9292d7b6adcacbc33c03885075ff28.
+- Installed with the game closed; the previous jar is backups/jars/Myau+UI_fixed.jar.pre-round-20261008.
+- Install checks: 62 classes under myau/mixin, one Myau jar in mods.
+
+### 2026-10-08 HUD animations: module list on/off, TargetHUD
+**User:** "開關都要有動畫阿，target hud 也要有動畫".
+
+**Module list (JELLO theme, MYAU interface).** This follows ArrayList.svelte (fly in from x 50px over 200ms;
+animate:flip 200ms).
+- **State:** `RowAnim` per module (`appear` 0..1, eased `y`), kept in `rowAnims`. `animateRows(rowStep)` runs per
+  frame on real frame time.
+- **Enabled modules:** `appear` rises over 0.2 s, and `y` eases to the module's slot (exp, tau 50 ms ≈ settles in
+  200 ms).
+- **Modules just turned off:** stay in the list, `appear` falls over 0.2 s, and they are removed at 0.
+- **Drawing each row:**
+  - its own animated `y`;
+  - translated 25 GUI px toward the screen edge by (1 − easeOutCubic(appear));
+  - background faded via the new `HudPanel.row(..., fade)`;
+  - name alpha = appear, floored at 4 because FontRenderer treats alpha 0 as opaque.
+- **CLASSIC:** unchanged.
+
+**TargetHUD JELLO.**
+- **Card:** already scaled in and out with expoOut; it now also fades, both the card (rounded fade) and all text
+  (alpha).
+- **Health thumb:** eases toward the health (tau 0.1 s ≈ ease-out 0.3 s).
+- **Trail:** eases toward the thumb (tau 0.2 s ≈ 0.6 s), as in HealthProgress.svelte. Reset when the target changes.
+- **Damage wash:** fades out over 250 ms instead of switching off.
+
+**Fix.** The heart in drawJelloStyle had been written to the source as a raw ❤ character, because a Python string
+turned `❤` into the character. It is now the `❤` escape.
+
+**Note for future edits.** Bash heredocs here eat backslashes. Use `chr(92)` or a scratchpad .py written with the
+Write tool.
+
+**Files and install.**
+- Backups: backups/src/pre-anim-20261008/ (before) and backups/src/anim-20261008/ (after).
+- Build: 266 tests pass, md5 c41c89b6804df7779eb682b007799ded.
+- Installed with the game closed; the previous jar is backups/jars/Myau+UI_fixed.jar.pre-anim-20261008.
+- Install checks: 62 classes under myau/mixin, one Myau jar in mods.

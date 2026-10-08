@@ -1,5 +1,6 @@
 package myau.module.modules;
 
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.ui.UiMode;
 import myau.ui.hud.HudLayout;
 
@@ -55,6 +56,28 @@ public class EffectsHUD extends Module {
         int rightEdge = resolution.getScaledWidth() - this.right.getValue();
         int drawY = this.y.getValue();
         int widest = 0;
+        boolean jello = HudPanel.active() && this.background.getValue();
+        if (jello) {
+            /* JelloBounce Effects.svelte: the rows sit in one card, 12px
+               corners at the top and bottom, no gaps. */
+            int cardWidest = 0;
+            int rows = 0;
+            for (PotionEffect effect : effects) {
+                int id = effect.getPotionID();
+                if (id < 0 || id >= Potion.potionTypes.length || Potion.potionTypes[id] == null) continue;
+                int amplifier = effect.getAmplifier();
+                String level = amplifier >= 0 && amplifier < AMPLIFIERS.length
+                        ? AMPLIFIERS[amplifier] : " " + (amplifier + 1);
+                cardWidest = Math.max(cardWidest, mc.fontRendererObj.getStringWidth(
+                        I18n.format(Potion.potionTypes[id].getName()) + level + "  "
+                                + StringUtils.ticksToElapsedTime(effect.getDuration())));
+                rows++;
+            }
+            if (rows > 0) {
+                HudPanel.rounded(rightEdge - cardWidest - 5, drawY - 3, rightEdge + 5,
+                        drawY + rows * (mc.fontRendererObj.FONT_HEIGHT + 3) + 1, HudPanel.CARD_RADIUS, 1.0F, true);
+            }
+        }
         for (PotionEffect effect : effects) {
             int id = effect.getPotionID();
             if (id < 0 || id >= Potion.potionTypes.length || Potion.potionTypes[id] == null) continue;
@@ -69,7 +92,7 @@ public class EffectsHUD extends Module {
             widest = Math.max(widest, textWidth);
             int textX = rightEdge - textWidth;
             int color = 0xFF000000 | (potion.getLiquidColor() & 0xFFFFFF);
-            if (this.background.getValue()) {
+            if (this.background.getValue() && !jello) {
                 Gui.drawRect(textX - 3, drawY - 2, rightEdge + 3,
                         drawY + mc.fontRendererObj.FONT_HEIGHT + 2, UiMode.adapt(0x70000000));
             }

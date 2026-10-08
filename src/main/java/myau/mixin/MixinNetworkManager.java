@@ -48,6 +48,8 @@ public abstract class MixinNetworkManager {
     )
     private void sendPacket(Packet<?> packet, CallbackInfo callbackInfo) {
         if (!packet.getClass().getName().startsWith("net.minecraft.network.play.server")) {
+            /* NoItemRelease: claimed before any listener can send packets of its own. */
+            myau.module.modules.NoItemRelease.claimVanillaRelease(packet);
             /* Who sent this. The game loop sends movement every tick and says
                nothing; a module sending an attack, a placement or a dig of its
                own is exactly what a correction usually needs explaining by, and
@@ -64,6 +66,13 @@ public abstract class MixinNetworkManager {
             } else if (Myau.playerStateManager != null && Myau.blinkManager != null && Myau.lagManager != null) {
                 if (!Myau.lagManager.isFlushing()) {
                     Myau.playerStateManager.handlePacket(packet);
+                    /* NoItemRelease: dropped after every listener and the
+                       state manager have seen it, before Blink / Lag could
+                       hold it. */
+                    if (myau.module.modules.NoItemRelease.dropVanillaRelease(packet)) {
+                        callbackInfo.cancel();
+                        return;
+                    }
                     if (Myau.blinkManager.isBlinking()) {
                         if (Myau.blinkManager.offerPacket(packet)) {
                             callbackInfo.cancel();

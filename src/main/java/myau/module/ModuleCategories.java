@@ -43,7 +43,7 @@ public final class ModuleCategories {
                 InvManager.class, Refill.class, AntiAFK.class, AntiFireball.class, AutoAnduril.class,
                 InventoryClicker.class);
         put(Category.MOVEMENT,
-                Fly.class, Speed.class, LongJump.class, Jesus.class, NoSlow.class, NoJumpDelay.class,
+                Fly.class, Speed.class, LongJump.class, Jesus.class, NoSlow.class, NoItemRelease.class, NoJumpDelay.class,
                 SafeWalk.class, Eagle.class, InvWalk.class, TargetStrafe.class, MoveFix.class,
                 Stasis.class);
         put(Category.RENDER,

@@ -8,6 +8,7 @@
  */
 package myau.module.modules;
 
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.ui.hud.HudLayout;
 
 import java.awt.Color;
@@ -92,7 +93,11 @@ public class FPScounter
         GlStateManager.scale(scaleFactor, scaleFactor, 1.0f);
         float drawX = baseX / scaleFactor;
         float drawY = baseY / scaleFactor;
-        BlurShadowRenderer.renderFrostedGlass(drawX - w / 2.0f, drawY - h / 2.0f, w, h, radius, (Integer)this.blurStrength.getValue(), (Integer)this.backgroundAlpha.getValue());
+        if (HudPanel.active()) {
+            HudPanel.panel(drawX - w / 2.0f, drawY - h / 2.0f, drawX + w / 2.0f, drawY + h / 2.0f);
+        } else {
+            BlurShadowRenderer.renderFrostedGlass(drawX - w / 2.0f, drawY - h / 2.0f, w, h, radius, (Integer)this.blurStrength.getValue(), (Integer)this.backgroundAlpha.getValue());
+        }
         int color = (Integer)this.textColor.getValue();
         mc.fontRendererObj.drawString(text, (int)(drawX - (float)textWidth / 2.0f), (int)(drawY - (float)textHeight / 2.0f), color);
         GlStateManager.popMatrix();

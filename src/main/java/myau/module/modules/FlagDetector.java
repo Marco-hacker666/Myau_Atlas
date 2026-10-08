@@ -121,7 +121,8 @@ public class FlagDetector extends Module {
     public final BooleanProperty chat = new BooleanProperty("chat", true);
     public final BooleanProperty sound = new BooleanProperty("sound", false);
 
-    public final ModeProperty hud = new ModeProperty("hud", 2, new String[]{"NONE", "COMPACT", "LIST"});
+    /* NONE by default since 2026-10-08: the owner wants the screen clean; the log file still records everything. */
+    public final ModeProperty hud = new ModeProperty("hud", 0, new String[]{"NONE", "COMPACT", "LIST"});
     /* The module arraylist owns one top corner and grows downward as modules
        are enabled, so any fixed position on that side is eventually buried by
        it. AUTO takes the opposite corner and stays clear however long the

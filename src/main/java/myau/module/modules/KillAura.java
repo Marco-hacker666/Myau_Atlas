@@ -9,6 +9,7 @@ import myau.event.types.EventType;
 import myau.event.types.Priority;
 import myau.events.*;
 import myau.management.RotationState;
+import myau.mixin.IAccessorEntity;
 import myau.mixin.IAccessorPlayerControllerMP;
 import myau.mixin.IAccessorRenderManager;
 import myau.module.Module;
@@ -92,6 +93,32 @@ public class KillAura extends Module {
      * 0 = turn only from SwingRange, as before.
      */
     public final FloatProperty scanExtra = new FloatProperty("ScanExtra", 2.5F, 0.0F, 4.0F);
+    /*
+     * K4/K5 (2026-10-08): LiquidBounce's KillAura rotation options, for the
+     * Legit / Silent / LockView aim. All off by default.
+     */
+    /** K5: Snap turns only when the next click is due by the time the aim lands (LB RotationTiming). */
+    public final ModeProperty rotationTiming = new ModeProperty("RotationTiming", 0, new String[]{"Normal", "Snap"},
+            this::isGenericAim);
+    /** K4: keep the look while it already hits the target (LB LazyRotation). */
+    public final BooleanProperty lazyRotation = new BooleanProperty("LazyRotation", false, this::isGenericAim);
+    /** K4: now and then (3% a tick) almost stop the turn for 1-2 ticks (LB ShortStop). */
+    public final BooleanProperty shortStop = new BooleanProperty("ShortStop", false, this::isGenericAim);
+    /** K4: now and then (3% a tick) aim 5-10 degrees off for 1-4 ticks (LB Fail). */
+    public final BooleanProperty failAim = new BooleanProperty("FailAim", false, this::isGenericAim);
+    /**
+     * K10 (2026-10-08): LiquidBounce's Raycast. Enemy: when the look about to
+     * be sent hits another valid enemy first, that one is hit (and becomes the
+     * target) -- as a real crosshair would. None: always the chosen target.
+     */
+    public final ModeProperty raycast = new ModeProperty("Raycast", 1, new String[]{"None", "Enemy"});
+    /**
+     * K11 (2026-10-08): a click due next tick comes one tick early when the
+     * target would be out of AttackRange by then (LB IgnoreWhenExitingRange,
+     * for 1.8: there is no weapon cooldown, so it is the clicker's next tick
+     * that is pulled in). The spacing after it is kept.
+     */
+    public final BooleanProperty exitClick = new BooleanProperty("ExitClick", true);
     /** Blocks of lead allowed on any axis, so a bad velocity cannot fling it. */
     public final FloatProperty aimLeadCap = new FloatProperty("AimLeadCap", 1.2F, 0.2F, 3.0F,
             () -> this.aimLead.getValue() > 0.0F);
@@ -232,6 +259,11 @@ public class KillAura extends Module {
     /* K3: the Human clicker's rate for this combo, and when it last clicked. */
     private double humanComboCps;
     private long humanLastClick;
+    /* K4: ShortStop and Fail state. */
+    private int shortStopTicks;
+    private int failTicks;
+    private float failYaw;
+    private float failPitch;
     private boolean blockingState = false;
     private boolean isBlocking = false;
     private boolean fakeBlockState = false;
@@ -251,7 +283,7 @@ public class KillAura extends Module {
 
         this.mode = new ModeProperty("Mode", 1, new String[]{"Single", "Switch"});
         this.sort = new ModeProperty("Sort", 1, new String[]{"Distance", "Health", "HurtTime", "FOV"});
-        this.autoBlock = new ModeProperty("auto-block", 3, new String[]{"NONE", "VANILLA", "SPOOF", "HYPIXEL", "BLINK", "INTERACT", "SWAP", "LEGIT", "FAKE", "Morden"});
+        this.autoBlock = new ModeProperty("auto-block", 3, new String[]{"NONE", "VANILLA", "SPOOF", "HYPIXEL", "BLINK", "INTERACT", "SWAP", "LEGIT", "FAKE", "Morden", "LiquidBounce"});
         this.autoBlockCPS = new FloatProperty("AutoBlockCPS", 8.0F, 1.0F, 10.0F);
         this.autoBlockRequirePress = new BooleanProperty("AutoBlockRequirePress", false);
         this.autoBlockRange = new FloatProperty("AutoBlockRange", 6.0F, 3.0F, 8.0F);
@@ -344,6 +376,79 @@ public class KillAura extends Module {
      * kept to 10..1000 ms. One click a tick at most here: the countdown in
      * onUpdate carries a short interval into the next tick (LB allows two).
      */
+    /** Legit, Silent or LockView: the aim the K4/K5 options apply to. */
+    private boolean isGenericAim() {
+        int mode = this.rotations.getValue();
+        return mode >= 1 && mode <= 3;
+    }
+
+    /**
+     * K5 (2026-10-08): LiquidBounce's Snap rotation timing. Hold the aim when
+     * the next click is further away than the ticks the turn needs at
+     * MaxTurnSpeed; turning earlier only shows an aim that waits on the
+     * clicker. Never holds once the look is on the target.
+     */
+    private boolean snapHold(UpdateEvent event) {
+        if (this.rotationTiming.getValue() != 1 || this.target == null) {
+            return false;
+        }
+        if (this.aimedAt(event.getYaw(), event.getPitch())) {
+            return false;
+        }
+        AxisAlignedBB box = this.target.getBox();
+        Vec3 eyes = mc.thePlayer.getPositionEyes(1.0F);
+        float[] to = RotationUtil.getRotationsTo(
+                (box.minX + box.maxX) / 2.0 - eyes.xCoord,
+                (box.minY + box.maxY) / 2.0 - eyes.yCoord,
+                (box.minZ + box.maxZ) / 2.0 - eyes.zCoord,
+                event.getYaw(), event.getPitch());
+        float angle = Math.abs(MathHelper.wrapAngleTo180_float(to[0] - event.getYaw()))
+                + Math.abs(to[1] - event.getPitch());
+        int turnTicks = Math.max(1, (int) Math.ceil(angle / Math.max(1.0F, this.aimMaxSpeed.getValue())));
+        int clickIn = this.attackDelayMS <= 0L ? 0 : (int) Math.ceil(this.attackDelayMS / 50.0);
+        return clickIn > turnTicks;
+    }
+
+    /**
+     * K4 (2026-10-08): LiquidBounce's LazyRotation, Fail and ShortStop, on
+     * this tick's aim step (rot) from the look last sent.
+     */
+    private float[] processAim(UpdateEvent event, float[] rot) {
+        float fromYaw = event.getYaw();
+        float fromPitch = event.getPitch();
+        if (this.lazyRotation.getValue() && this.aimedAt(fromYaw, fromPitch)) {
+            /* The look already hits: no turn (LB findRotation, lazyRotation). */
+            return new float[]{fromYaw, fromPitch};
+        }
+        float yaw = rot[0];
+        float pitch = rot[1];
+        if (this.failAim.getValue()) {
+            if (this.random.nextInt(100) < 3) {
+                this.failTicks = 1 + this.random.nextInt(4);
+                this.failYaw = (5.0F + this.random.nextFloat() * 5.0F) * (this.random.nextBoolean() ? 1.0F : -1.0F);
+                this.failPitch = this.random.nextFloat() * 2.0F * (this.random.nextBoolean() ? 1.0F : -1.0F);
+            }
+            if (this.failTicks > 0) {
+                this.failTicks--;
+                yaw += this.failYaw;
+                pitch += this.failPitch;
+            }
+        }
+        if (this.shortStop.getValue()) {
+            if (this.shortStopTicks <= 0 && this.random.nextInt(100) < 3) {
+                this.shortStopTicks = 1 + this.random.nextInt(2);
+            }
+            if (this.shortStopTicks > 0) {
+                /* Only 0-10% of the way this tick (LB towardsLinear 0..0.1). */
+                this.shortStopTicks--;
+                float f = this.random.nextFloat() * 0.1F;
+                yaw = fromYaw + MathHelper.wrapAngleTo180_float(yaw - fromYaw) * f;
+                pitch = fromPitch + (pitch - fromPitch) * f;
+            }
+        }
+        return new float[]{yaw, MathHelper.clamp_float(pitch, -90.0F, 90.0F)};
+    }
+
     private long humanInterval() {
         final double sigma = 0.45;
         long now = System.currentTimeMillis();
@@ -393,6 +498,9 @@ public class KillAura extends Module {
         if (!this.isEnabled() || this.target == null) {
             return;
         }
+        if (this.deferredAttack) {
+            this.raycastRetarget(event.getNewYaw(), event.getNewPitch());
+        }
         boolean attacked = this.deferredAttack && this.performAttack(event.getNewYaw(), event.getNewPitch());
         this.finishAttack(event, attacked, this.deferredSwap, this.deferredBlocked);
     }
@@ -412,16 +520,106 @@ public class KillAura extends Module {
         }
     }
 
+    /**
+     * K10: the first living entity along the look within AttackRange. If it is
+     * another valid enemy, it becomes the target and takes this hit. Blocks in
+     * the way are not traced: ThroughWalls already decides about walls.
+     */
+    private void raycastRetarget(float yaw, float pitch) {
+        if (this.raycast.getValue() == 0 || this.target == null) {
+            return;
+        }
+        double range = this.attackRange.getValue();
+        Vec3 eyes = mc.thePlayer.getPositionEyes(1.0F);
+        Vec3 look = ((IAccessorEntity) mc.thePlayer).callGetVectorForRotation(pitch, yaw);
+        Vec3 end = eyes.addVector(look.xCoord * range, look.yCoord * range, look.zCoord * range);
+        AxisAlignedBB sweep = mc.thePlayer.getEntityBoundingBox()
+                .addCoord(look.xCoord * range, look.yCoord * range, look.zCoord * range)
+                .expand(1.0, 1.0, 1.0);
+        EntityLivingBase first = null;
+        double nearest = range + 1.0E-3;
+        for (Entity entity : mc.theWorld.getEntitiesWithinAABBExcludingEntity(mc.thePlayer, sweep)) {
+            if (!(entity instanceof EntityLivingBase) || !entity.canBeCollidedWith()) {
+                continue;
+            }
+            double border = entity.getCollisionBorderSize();
+            AxisAlignedBB box = entity.getEntityBoundingBox().expand(border, border, border);
+            double distance;
+            if (box.isVecInside(eyes)) {
+                distance = 0.0;
+            } else {
+                MovingObjectPosition hit = box.calculateIntercept(eyes, end);
+                if (hit == null) {
+                    continue;
+                }
+                distance = eyes.distanceTo(hit.hitVec);
+            }
+            if (distance < nearest) {
+                nearest = distance;
+                first = (EntityLivingBase) entity;
+            }
+        }
+        if (first != null && first != this.target.getEntity() && this.isValidTarget(first)) {
+            this.target = new AttackData(first, this);
+        }
+    }
+
+    /**
+     * K11: within AttackRange now, out of it next tick if both keep moving as
+     * they did this tick, and the click is due within that tick. Not while the
+     * target is still early in its hurt time (LB: hurtTime > 7).
+     */
+    private boolean exitingRange() {
+        if (!this.exitClick.getValue() || this.target == null || this.attackDelayMS > 50L) {
+            return false;
+        }
+        EntityLivingBase entity = this.target.getEntity();
+        if (entity.hurtTime > 7) {
+            return false;
+        }
+        double range = this.attackRange.getValue();
+        double border = entity.getCollisionBorderSize();
+        AxisAlignedBB box = entity.getEntityBoundingBox().expand(border, border, border);
+        Vec3 eyes = mc.thePlayer.getPositionEyes(1.0F);
+        if (distanceTo(box, eyes) > range) {
+            return false;
+        }
+        AxisAlignedBB nextBox = box.offset(entity.posX - entity.lastTickPosX,
+                entity.posY - entity.lastTickPosY, entity.posZ - entity.lastTickPosZ);
+        Vec3 nextEyes = eyes.addVector(mc.thePlayer.posX - mc.thePlayer.lastTickPosX,
+                mc.thePlayer.posY - mc.thePlayer.lastTickPosY, mc.thePlayer.posZ - mc.thePlayer.lastTickPosZ);
+        return distanceTo(nextBox, nextEyes) > range;
+    }
+
+    private static double distanceTo(AxisAlignedBB box, Vec3 point) {
+        double x = Math.max(box.minX, Math.min(point.xCoord, box.maxX));
+        double y = Math.max(box.minY, Math.min(point.yCoord, box.maxY));
+        double z = Math.max(box.minZ, Math.min(point.zCoord, box.maxZ));
+        return point.distanceTo(new Vec3(x, y, z));
+    }
+
+    /** K7 (2026-10-08): the user's HitSelect (ACTIVE) decides about aura hits too. */
+    private boolean hitSelectHolds() {
+        HitSelect hitSelect = (HitSelect) Myau.moduleManager.modules.get(HitSelect.class);
+        return hitSelect != null && this.target != null && hitSelect.dropsAuraHit(this.target.getEntity());
+    }
+
     private boolean performAttack(float yaw, float pitch) {
         if (!Myau.playerStateManager.digging && !Myau.playerStateManager.placing) {
             if (this.isPlayerBlocking() && this.autoBlock.getValue() != 1) {
                 return false;
-            } else if (this.attackDelayMS > 0L) {
+            } else if (this.attackDelayMS > 0L && !this.exitingRange()) {
                 return false;
             } else if (this.otherActionsThisTick) {
                 /* Not in the same tick as someone else's placement, dig or
                    inventory click: no hand does both (TickActions). */
                 myau.management.TickActions.refuse();
+                return false;
+            } else if (this.hitSelectHolds()) {
+                /* K7: HitSelect ACTIVE keeps this click back (the target is
+                   still inside its hurt time): no swing, no hit, no
+                   slowdown. The click is spent all the same. */
+                this.attackDelayMS += this.getAttackDelay();
                 return false;
             } else {
                 if ((this.rotations.getValue() == 4 || this.rotations.getValue() == 6)
@@ -1059,7 +1257,13 @@ public class KillAura extends Module {
                                 this.fakeBlockState = false;
                                 break;
                             case 7:
-                                if (this.hasValidTarget()) {
+                                /* K6 (2026-10-08): LEGIT blocks only with the target
+                                   in SwingRange, where hits happen. It blocked for
+                                   anyone within AutoBlockRange (6 for the user), so
+                                   chasing a target 4-6 blocks off was done blocking,
+                                   at blocking speed ("一直 block，速度很慢"). */
+                                if (this.hasValidTarget() && this.target != null
+                                        && this.isBoxInSwingRange(this.target.getBox())) {
                                     if (!Myau.playerStateManager.digging && !Myau.playerStateManager.placing) {
                                         switch (this.blockTick) {
                                             case 0:
@@ -1085,6 +1289,45 @@ public class KillAura extends Module {
                                     this.isBlocking = true;
                                     this.fakeBlockState = false;
                                 } else {
+                                    if (this.isPlayerBlocking() && !Myau.playerStateManager.digging
+                                            && !Myau.playerStateManager.placing) {
+                                        /* K6: out of reach -- let go, so the chase
+                                           runs at full speed. */
+                                        this.stopBlock();
+                                    }
+                                    this.blockTick = 0;
+                                    Myau.blinkManager.setBlinkState(false, BlinkModules.AUTO_BLOCK);
+                                    this.isBlocking = false;
+                                    this.fakeBlockState = false;
+                                }
+                                break;
+                            case 10:
+                                /* K8 (2026-10-08): LiquidBounce's AutoBlock with its
+                                   defaults (Reblock 0, StopUsingItem, OnScanRange
+                                   off). On a tick the clicker will click: let go,
+                                   hit, block again at once (finishAttack sends the
+                                   interact + use after the hit). Between clicks:
+                                   keep blocking. Out of SwingRange: let go, so a
+                                   chase runs at full speed. */
+                                if (this.target != null && this.isBoxInSwingRange(this.target.getBox())) {
+                                    if (!Myau.playerStateManager.digging && !Myau.playerStateManager.placing) {
+                                        if (this.attackDelayMS <= 0L) {
+                                            if (this.isPlayerBlocking()) {
+                                                this.stopBlock();
+                                            }
+                                            swap = true;
+                                        } else if (!this.isPlayerBlocking()) {
+                                            swap = true;
+                                        }
+                                    }
+                                    Myau.blinkManager.setBlinkState(false, BlinkModules.AUTO_BLOCK);
+                                    this.isBlocking = true;
+                                    this.fakeBlockState = false;
+                                } else {
+                                    if (this.isPlayerBlocking() && !Myau.playerStateManager.digging
+                                            && !Myau.playerStateManager.placing) {
+                                        this.stopBlock();
+                                    }
                                     Myau.blinkManager.setBlinkState(false, BlinkModules.AUTO_BLOCK);
                                     this.isBlocking = false;
                                     this.fakeBlockState = false;
@@ -1234,6 +1477,12 @@ public class KillAura extends Module {
                                 event.setPervRotation(finalYaw, 1);
                             }
                             deferred = true;
+                        } else if (this.rotations.getValue() >= 1 && this.snapHold(event)) {
+                            /* K5 Snap: the click is not due by the time the aim
+                               would land -- no turn toward the target this tick
+                               (the look eases back to the camera as after any
+                               aim). The click, when due, comes with the turn. */
+                            deferred = true;
                         } else if (this.rotations.getValue() >= 1) {
                             float[] rotations = this.aimMode.getValue() == 1
                                     ? this.stepTowards(event.getYaw(), event.getPitch())
@@ -1244,6 +1493,7 @@ public class KillAura extends Module {
                                             (float) this.angleStep.getValue() + RandomUtil.nextFloat(-5.0F, 5.0F),
                                             (float) this.smoothing.getValue() / 100.0F
                                     );
+                            rotations = this.processAim(event, rotations);
                             /* How far this tick's correction actually moved. It
                                falls to zero once the aim has caught up, which is
                                what the tremor below is scaled by: noise larger

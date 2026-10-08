@@ -5,6 +5,7 @@
  */
 package myau.module.modules;
 
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.event.EventTarget;
 import myau.events.Render2DEvent;
 import myau.module.Module;
@@ -155,8 +156,13 @@ public class KeyStrokes extends Module {
     }
 
     private void drawKey(String label, int x, int y, int w, int h, boolean down, boolean cpsLine, int cps) {
-        RenderUtil.drawRect(x, y, x + w, y + h, down ? 0xDDFFFFFF : 0x66000000);
-        int fg = down ? 0xFF222222 : 0xFFFFFFFF;
+        boolean jello = HudPanel.active();
+        if (jello) {
+            jelloKey(x, y, w, h, down);
+        } else {
+            RenderUtil.drawRect(x, y, x + w, y + h, down ? 0xDDFFFFFF : 0x66000000);
+        }
+        int fg = jello ? (down ? 0xFFD3D3D3 : 0xFFFFFFFF) : (down ? 0xFF222222 : 0xFFFFFFFF);
         int labelY = cpsLine ? y + 3 : y + h / 2 - 4;
         mc.fontRendererObj.drawString(label, x + w / 2 - mc.fontRendererObj.getStringWidth(label) / 2, labelY, fg);
         if (cpsLine) {
@@ -165,9 +171,26 @@ public class KeyStrokes extends Module {
         }
     }
 
+    /** JelloBounce Key.svelte: rgba(black,.45), 7px corners; active rgba(#2e2e2e,.7) at 95% scale. */
+    private static void jelloKey(float x, float y, float w, float h, boolean down) {
+        if (down) {
+            float dx = w * 0.025F;
+            float dy = h * 0.025F;
+            HudPanel.rounded(x + dx, y + dy, x + w - dx, y + h - dy, HudPanel.SMALL_RADIUS, 1.0F, true);
+            HudPanel.fill(x + dx, y + dy, x + w - dx, y + h - dy, HudPanel.SMALL_RADIUS, 0xB32E2E2E);
+        } else {
+            HudPanel.rounded(x, y, x + w, y + h, HudPanel.SMALL_RADIUS, 1.0F, true);
+        }
+    }
+
     private void drawSpace(int x, int y, boolean down) {
-        RenderUtil.drawRect(x, y, x + SPACE_W, y + SPACE_H, down ? 0xDDFFFFFF : 0x66000000);
-        int fg = down ? 0xFF222222 : 0xFFFFFFFF;
+        boolean jello = HudPanel.active();
+        if (jello) {
+            jelloKey(x, y, SPACE_W, SPACE_H, down);
+        } else {
+            RenderUtil.drawRect(x, y, x + SPACE_W, y + SPACE_H, down ? 0xDDFFFFFF : 0x66000000);
+        }
+        int fg = jello ? (down ? 0xFFD3D3D3 : 0xFFFFFFFF) : (down ? 0xFF222222 : 0xFFFFFFFF);
         int lineW = 28;
         RenderUtil.drawRect(x + (SPACE_W - lineW) / 2, y + SPACE_H / 2 - 1,
                 x + (SPACE_W + lineW) / 2, y + SPACE_H / 2 + 1, fg);

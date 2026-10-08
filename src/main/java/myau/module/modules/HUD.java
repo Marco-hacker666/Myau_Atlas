@@ -1,5 +1,6 @@
 package myau.module.modules;
 
+import myau.ui.impl.clickgui.atlas.HudPanel;
 import myau.ui.UiMode;
 import myau.ui.hud.HudLayout;
 
@@ -71,6 +72,19 @@ public class HUD extends Module {
             Disabler.class, ClientSpoofer.class, AutoHypixel.class
     ));
     private List<Module> activeModules = new ArrayList<>();
+    /*
+     * JELLO module-list animation (2026-10-08; ArrayList.svelte's
+     * transition:fly x 50px / 200ms and animate:flip 200ms): a row slides in
+     * from the screen edge and fades in when its module turns on, slides back
+     * out and fades when it turns off, and every row eases to its new place.
+     */
+    private static final class RowAnim {
+        float appear;
+        float y = Float.NaN;
+    }
+
+    private final java.util.Map<Module, RowAnim> rowAnims = new java.util.LinkedHashMap<>();
+    private long lastRowFrame;
     /* Each listed module's name, suffix and width, worked out once a tick with
        the sort that needs them anyway. The render used to redo all three for
        every module up to three times a frame (glow, blur, text) -- suffix
@@ -94,6 +108,13 @@ public class HUD extends Module {
     public final IntProperty offsetY = new IntProperty("offset-y", 2, 0, 255);
     public final FloatProperty scale = new FloatProperty("scale", 1.0F, 0.5F, 1.5F);
     public final ModeProperty interfaceMode = new ModeProperty("interface", 0, new String[]{"MYAU", "CREIDA"});
+    /**
+     * 2026-10-08: how every HUD element draws its background. JELLO
+     * (default): LiquidBounce's JelloBounce theme -- black at 45%, a soft
+     * dark halo, rounded cards, flush module-list rows (HudPanel). CLASSIC:
+     * each HUD's own older drawing.
+     */
+    public final ModeProperty hudTheme = new ModeProperty("hud-theme", 0, new String[]{"JELLO", "CLASSIC"});
     public final PercentProperty background = new PercentProperty("background", 25);
     public final IntProperty bgAlpha = new IntProperty("bg-alpha", 120, 0, 255);
     public final BooleanProperty blur = new BooleanProperty("blur", true);
@@ -394,6 +415,48 @@ public class HUD extends Module {
         return cached != null ? cached : (float) this.calculateStringWidth(this.getModuleName(module), this.getModuleSuffix(module));
     }
 
+    /** This frame's rows: the enabled modules, then those still sliding out; positions eased. */
+    private List<Module> animateRows(float rowStep) {
+        long now = System.nanoTime();
+        float dt = this.lastRowFrame == 0L ? 0.016F : Math.min(0.1F, (now - this.lastRowFrame) / 1.0E9F);
+        this.lastRowFrame = now;
+        /* Settles in about 200ms, like the theme's flip. */
+        float follow = 1.0F - (float) Math.exp(-dt / 0.05F);
+        List<Module> rows = new ArrayList<>();
+        Set<Module> shown = new HashSet<>(this.activeModules);
+        int index = 0;
+        for (Module module : this.activeModules) {
+            RowAnim anim = this.rowAnims.get(module);
+            if (anim == null) {
+                anim = new RowAnim();
+                this.rowAnims.put(module, anim);
+            }
+            float target = index * rowStep;
+            if (Float.isNaN(anim.y)) {
+                anim.y = target;
+            }
+            anim.y += (target - anim.y) * follow;
+            anim.appear = Math.min(1.0F, anim.appear + dt / 0.2F);
+            rows.add(module);
+            index++;
+        }
+        java.util.Iterator<java.util.Map.Entry<Module, RowAnim>> it = this.rowAnims.entrySet().iterator();
+        while (it.hasNext()) {
+            java.util.Map.Entry<Module, RowAnim> entry = it.next();
+            if (shown.contains(entry.getKey())) {
+                continue;
+            }
+            RowAnim anim = entry.getValue();
+            anim.appear -= dt / 0.2F;
+            if (anim.appear <= 0.0F || Float.isNaN(anim.y)) {
+                it.remove();
+            } else {
+                rows.add(entry.getKey());
+            }
+        }
+        return rows;
+    }
+
     private String cachedName(Module module) {
         String cached = this.lineName.get(module);
         return cached != null ? cached : this.getModuleName(module);
@@ -515,7 +578,9 @@ public class HUD extends Module {
 
             long l = System.currentTimeMillis();
 
-            if (this.glow.getValue() || this.blur.getValue()) {
+            /* JELLO draws each row's own background below: the old blur and
+               glow passes would double it. */
+            if (!HudPanel.active() && (this.glow.getValue() || this.blur.getValue())) {
                 if (this.glow.getValue()) {
                     myau.util.shader.BlurUtils.prepareBloom();
                     long offset = 0L;
@@ -582,18 +647,42 @@ public class HUD extends Module {
             }
 
             long offset = 0L;
-            for (Module module : this.activeModules) {
+            boolean jelloRows = HudPanel.active();
+            float rowStep = (height + (this.shadow.getValue() ? 1.0F : 0.0F) + this.padding.getValue() * 2.0F)
+                    * this.scale.getValue() * (this.posY.getValue() == 0 ? 1.0F : -1.0F);
+            float listTop = y;
+            List<Module> drawnRows = jelloRows ? this.animateRows(rowStep) : this.activeModules;
+            for (Module module : drawnRows) {
+                float rowFade = 1.0F;
+                if (jelloRows) {
+                    RowAnim anim = this.rowAnims.get(module);
+                    y = listTop + anim.y;
+                    rowFade = anim.appear;
+                    float eased = 1.0F - (1.0F - rowFade) * (1.0F - rowFade) * (1.0F - rowFade);
+                    GlStateManager.pushMatrix();
+                    GlStateManager.translate((1.0F - eased) * 25.0F * (this.posX.getValue() == 1 ? 1.0F : -1.0F),
+                            0.0F, 0.0F);
+                }
                 String moduleName = this.cachedName(module);
                 String[] moduleSuffix = this.cachedSuffix(module);
                 float totalWidth = this.getModuleRenderWidth(module);
-                int color = this.getColor(l, offset).getRGB();
+                boolean jello = HudPanel.active();
+                /* JELLO (ArrayList.svelte): white names, grey tags, no edge bar.
+                   Never below alpha 4: the font would read 0 as opaque. */
+                int color = jello ? (Math.max(4, Math.round(rowFade * 255.0F)) << 24) | 0xFFFFFF
+                        : this.getColor(l, offset).getRGB();
                 float pad = this.padding.getValue();
                 float bgX1 = x / this.scale.getValue() - 1.0F - pad - (this.posX.getValue() == 0 ? 0.0F : totalWidth);
                 float bgY1 = y / this.scale.getValue() - pad - (this.posY.getValue() == 0 ? (offset == 0L ? 1.0F : 0.0F) : (this.shadow.getValue() ? 1.0F : 0.0F));
                 float bgX2 = x / this.scale.getValue() + 1.0F + pad + (this.posX.getValue() == 0 ? totalWidth : 0.0F);
                 float bgY2 = y / this.scale.getValue() + height + pad + (this.posY.getValue() == 0 ? (this.shadow.getValue() ? 1.0F : 0.0F) : (offset == 0L ? 1.0F : 0.0F));
                 RenderUtil.enableRenderState();
-                if (this.background.getValue() > 0) {
+                if (jello) {
+                    /* JELLO: each row a square black-45% slab, flush with the
+                       next, with the theme's soft shadow; 7px a side (3.5 at
+                       GUI scale) where the rows pad 2. */
+                    HudPanel.row(bgX1 - 1.5F, bgY1, bgX2 + 1.5F, bgY2, rowFade);
+                } else if (this.background.getValue() > 0) {
                     int alpha = (int) (255 * (this.background.getValue().floatValue() / 100.0F));
                     int bgColor = UiMode.adapt(new Color(15, 15, 15, alpha).getRGB()); // Glassmorphic dark background
                     if (this.rounded.getValue()) {
@@ -617,7 +706,7 @@ public class HUD extends Module {
                 }
                 
                 // Draw a subtle white edge for glassmorphism instead of a colored sidebar
-                if (this.showBar.getValue()) {
+                if (this.showBar.getValue() && !jello) {
                     int edgeColor = UiMode.adapt(new Color(255, 255, 255, 40).getRGB());
                     if (this.posX.getValue() == 0) { // Right side
                         RenderUtil.drawRect(bgX2 - 1.0F, bgY1, bgX2, bgY2, edgeColor);
@@ -705,6 +794,9 @@ public class HUD extends Module {
                 }
                 y += (height + (this.shadow.getValue() ? 1.0F : 0.0F) + this.padding.getValue() * 2.0F) * this.scale.getValue() * (this.posY.getValue() == 0 ? 1.0F : -1.0F);
                 offset++;
+                if (jelloRows) {
+                    GlStateManager.popMatrix();
+                }
             }
             if (this.blinkTimer.getValue()) {
                 BlinkModules blinkingModule = Myau.blinkManager.getBlinkingModule();

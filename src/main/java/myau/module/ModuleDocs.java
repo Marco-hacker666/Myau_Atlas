@@ -232,7 +232,7 @@ public final class ModuleDocs {
         d("Hitflick", "打中目標的瞬間把視角甩開，再轉回來（偏移擊退方向）。");
         d("ServerLag", "暫時攔下伺服器送來的部分封包，模擬伺服器延遲。");
         d("FakeLag", "延後送出自己的移動，讓伺服器上的你落後於實際位置，方便先手。");
-        d("HitSelect", "挑出手時機：只在對自己有利（例如減少吃擊退）的時候讓攻擊送出。");
+        d("HitSelect", "挑出手時機：只在對自己有利（例如減少吃擊退）的時候讓攻擊送出。ACTIVE 也會管 KillAura 的攻擊。");
         d("MoreKB", "攻擊時重置衝刺，讓每一下打出更多擊退。");
         d("Criticals", "讓攻擊判定為爆擊（多 50% 傷害），以封包或小跳實現。");
         d("FastBow", "加快拉弓射箭的速度。");
@@ -290,6 +290,9 @@ public final class ModuleDocs {
         d("LongJump", "跳得更遠。");
         d("Jesus", "可以在水面上行走。");
         d("NoSlow", "使用物品（格擋、吃東西、拉弓）時不減速。");
+        help("HUD", "hud-theme", "所有 HUD 的外觀。JELLO：LiquidBounce JelloBounce 主題（黑 45%、柔和陰影、圓角卡片、模組清單貼齊）。CLASSIC：各 HUD 原本的畫法。");
+        d("NoItemRelease", "放開右鍵時不送出「停止使用物品」封包，伺服器仍當你在使用；本機照常停止（來源：Slinky）。");
+        help("NoItemRelease", "safe-release", "一移動或疾跑，就在該 tick 的移動封包前補送放開封包（避免 Grim NoSlow）；關掉則一直不送。");
         d("NoJumpDelay", "移除連續跳躍之間的延遲。");
         d("SafeWalk", "走到方塊邊緣時不會掉下去（像一直按著潛行）。");
         d("Eagle", "走到邊緣時自動潛行，用來後退搭橋。");
@@ -411,11 +414,12 @@ public final class ModuleDocs {
         g("KillAura",
                 h("目標", "Mode", "Sort", "SwitchDelay", "FOV", "Players", "Bosses", "Mobs", "Animals", "Golems",
                         "Silverfish", "Teams", "BotCheck", "ThroughWalls"),
-                h("出手", "CPS Mode", "MinCPS", "MaxCPS", "AttackRange", "SwingRange", "ScanExtra", "RequirePress",
+                h("出手", "CPS Mode", "MinCPS", "MaxCPS", "AttackRange", "SwingRange", "ScanExtra", "Raycast", "ExitClick", "RequirePress",
                         "AllowMining", "WeaponsOnly", "AllowTools", "InventoryCheck"),
                 h("格擋", "auto-block", "AttackTick", "AutoBlockRequirePress", "AutoBlockCPS", "AutoBlockRange"),
                 h("轉頭", "Rotations", "MoveFix", "SmoothBack", "AimMode", "MinTurnSpeed", "MaxTurnSpeed",
-                        "Multipoint", "TurnAccel", "Smoothing", "AngleStep", "AimLead", "AimLeadCap"),
+                        "Multipoint", "TurnAccel", "Smoothing", "AngleStep", "AimLead", "AimLeadCap",
+                        "RotationTiming", "LazyRotation", "ShortStop", "FailAim"),
                 h("Hypixel 轉頭", "Hypixel*"),
                 h("LiquidBounce 轉頭", "LB-*", "DeadZone", "MaxSpeed", "MinSpeed", "Acceleration", "Deceleration",
                         "Overshoot", "OverStr", "OverRecov", "Noise", "Randomize", "RandomRange", "YRandomize",
@@ -612,11 +616,17 @@ public final class ModuleDocs {
         help(ka, "MaxCPS", "每秒攻擊次數上限。");
         help(ka, "AttackRange", "真正出手的距離（格）。原版是 3.0。");
         help(ka, "SwingRange", "開始轉頭與揮手的距離，略大於攻擊距離。");
+        help(ka, "RotationTiming", "Normal：一直瞄準。Snap：只在「轉到位時剛好要點」才轉頭（LiquidBounce）。");
+        help(ka, "LazyRotation", "視角已經打得到目標就不再轉（LiquidBounce）。");
+        help(ka, "ShortStop", "偶爾（每 tick 3%）停頓 1–2 tick，只轉一點點，像真人（LiquidBounce）。");
+        help(ka, "FailAim", "偶爾（每 tick 3%）瞄偏 5–10 度 1–4 tick，像真人失誤（LiquidBounce）。");
+        help(ka, "Raycast", "Enemy：視角先碰到別的敵人，就打那個人並改成目標（像真的準星）。None：永遠打選定的目標（LiquidBounce）。");
+        help(ka, "ExitClick", "目標下一 tick 就要離開攻擊距離時，把下一下提早一 tick 打出去（LiquidBounce）。");
         help(ka, "ScanExtra", "比揮手距離再遠幾格就先轉頭（不揮手），每個目標隨機 ±0.5；0 = 只從揮手距離才轉（LiquidBounce ScanRange）。");
         help(ka, "RequirePress", "只有按住左鍵時才攻擊。");
         help(ka, "AllowMining", "準心對著方塊且按住左鍵時，讓你挖方塊而不是打人。");
         help(ka, "InventoryCheck", "開著背包、箱子等畫面時不攻擊。");
-        help(ka, "auto-block", "自動格擋方式。LEGIT：打一下舉劍、下個 tick 放下，最像真人 block hit。");
+        help(ka, "auto-block", "自動格擋方式。LEGIT：打一下舉劍、下個 tick 放下，最像真人 block hit。LiquidBounce：要點的那 tick 先放下、打、立刻再舉，其餘時間舉著；離開揮手距離就放下。");
         help(ka, "AutoBlockCPS", "格擋時的攻擊速度。");
         help(ka, "AutoBlockRange", "目標在這個距離內就舉劍格擋。");
         help(ka, "AutoBlockRequirePress", "只有按住右鍵時才自動格擋。");
