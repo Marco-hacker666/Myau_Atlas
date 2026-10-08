@@ -73,6 +73,7 @@ public class Myau {
         EventManager.register(commandManager);
         EventManager.register(new myau.management.PerfLog());
         EventManager.register(new myau.management.HitTimer());
+        EventManager.register(new myau.management.LogUploader());
         EventManager.register(new myau.management.PlaceRotations());
         /* One definition of "a connection to a server" (Phase 2, 2026-09-28). */
         EventManager.register(new myau.management.ServerSession());
@@ -340,7 +341,9 @@ public class Myau {
         me.ksyz.accountmanager.AccountManager.init();
         ViaMCP.create();
 
-        try (InputStreamReader reader = new InputStreamReader(Objects.requireNonNull(Myau.class.getResourceAsStream("/version.json")), StandardCharsets.UTF_8)) {
+        /* Our own name (2026-10-08): "/version.json" found Forge's launcher profile first,
+           which has no "version", so every build said "dev". */
+        try (InputStreamReader reader = new InputStreamReader(Objects.requireNonNull(Myau.class.getResourceAsStream("/myau-version.json")), StandardCharsets.UTF_8)) {
             JsonObject modInfo = new JsonParser().parse(reader).getAsJsonObject();
             version = modInfo.get("version").getAsString();
         } catch (Exception e) {

@@ -116,7 +116,7 @@ public class Dropdown extends Component {
                     int itemY = dropdownY + i * ITEM_HEIGHT;
                     if (mouseX >= x && mouseX <= x + width && mouseY >= itemY && mouseY < itemY + ITEM_HEIGHT) {
                         if (mouseButton == 0) {
-                            modeProperty.setValue(i);
+                            modeProperty.setVisible(i);
                             expanded = false;
                             return true;
                         }

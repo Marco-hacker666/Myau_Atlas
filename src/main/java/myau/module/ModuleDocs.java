@@ -412,13 +412,15 @@ public final class ModuleDocs {
 
         // ============================================================ GROUPS
         g("KillAura",
-                h("目標", "Mode", "Sort", "SwitchDelay", "FOV", "Players", "Bosses", "Mobs", "Animals", "Golems",
+                h("常用", "Rotations", "CPS Mode", "MinCPS", "MaxCPS", "AttackRange", "SwingRange", "auto-block",
+                        "Mode", "MoveFix"),
+                h("目標", "Sort", "SwitchDelay", "FOV", "Players", "Bosses", "Mobs", "Animals", "Golems",
                         "Silverfish", "Teams", "BotCheck", "ThroughWalls"),
-                h("出手", "CPS Mode", "MinCPS", "MaxCPS", "AttackRange", "SwingRange", "ScanExtra", "Raycast", "ExitClick", "RequirePress",
+                h("出手", "ScanExtra", "Raycast", "ExitClick", "RequirePress",
                         "AllowMining", "WeaponsOnly", "AllowTools", "InventoryCheck"),
-                h("格擋", "auto-block", "AttackTick", "AutoBlockRequirePress", "AutoBlockCPS", "AutoBlockRange"),
-                h("轉頭", "Rotations", "MoveFix", "SmoothBack", "AimMode", "MinTurnSpeed", "MaxTurnSpeed",
-                        "Multipoint", "TurnAccel", "Smoothing", "AngleStep", "AimLead", "AimLeadCap",
+                h("格擋", "AttackTick", "AutoBlockRequirePress", "AutoBlockCPS", "AutoBlockRange"),
+                h("轉頭", "SmoothBack", "AimMode", "MinTurnSpeed", "MaxTurnSpeed",
+                        "Multipoint", "AimDrift", "FlickOvershoot", "TurnAccel", "Smoothing", "AngleStep", "AimLead", "AimLeadCap",
                         "RotationTiming", "LazyRotation", "ShortStop", "FailAim"),
                 h("Hypixel 轉頭", "Hypixel*"),
                 h("LiquidBounce 轉頭", "LB-*", "DeadZone", "MaxSpeed", "MinSpeed", "Acceleration", "Deceleration",
@@ -436,10 +438,11 @@ public final class ModuleDocs {
                 h("物品", "auto-switch", "switch-back", "only-on-depletion", "pause-autoclicker"),
                 h("其他", "disable-after", "log"));
         g("Scaffold",
-                h("轉頭", "rotations", "turn-speed", "humanize", "telly-*", "move-fix"),
-                h("移動", "sprint", "ground-motion", "air-motion", "speed-motion", "safe-walk", "eagle",
+                h("常用", "rotations", "sprint", "tower", "keep-y", "safe-walk", "move-fix", "turn-speed"),
+                h("轉頭", "humanize", "telly-*"),
+                h("移動", "ground-motion", "air-motion", "speed-motion", "eagle",
                         "edge-distance", "sneak-delay", "blocks-per-sneak"),
-                h("疊高與高度", "tower", "hypixeltower", "keep-y", "keep-y-on-press", "no-keep-y-on-jump-potion"),
+                h("疊高與高度", "hypixeltower", "keep-y-on-press", "no-keep-y-on-jump-potion"),
                 h("放置", "pause-on-correction", "safe", "safe-delay-ticks", "multi-place", "swing", "item-spoof"),
                 h("顯示", "block-counter", "outline-esp", "outline-color"));
         g("Velocity",
@@ -611,22 +614,22 @@ public final class ModuleDocs {
         help(ka, "Mode", "Single 一直打同一個人；Switch 每過 SwitchDelay 換下一個目標。");
         help(ka, "Sort", "選目標的優先順序：距離、血量、受傷時間、或離準心最近。");
         help(ka, "SwitchDelay", "多久重新挑一次目標（毫秒）；Switch 模式下也是換人的間隔。");
-        help(ka, "CPS Mode", "Normal：在 MinCPS～MaxCPS 間隨機。Record：照一段真人錄下的點擊節奏（約 9.8 CPS）。Human：LiquidBounce 的真人點擊器，每輪連擊在 MinCPS～MaxCPS 間抽一個速度，間隔呈對數常態分布。");
+        help(ka, "CPS Mode", "Normal：在 MinCPS～MaxCPS 間隨機。Record：照一段真人錄下的點擊節奏（約 9.8 CPS）。Human：真人點擊器，每輪連擊在 MinCPS～MaxCPS 間抽一個速度，間隔呈對數常態分布。");
         help(ka, "MinCPS", "每秒攻擊次數下限（實際在上下限間隨機，最高受 tick 限制為 20）。");
         help(ka, "MaxCPS", "每秒攻擊次數上限。");
         help(ka, "AttackRange", "真正出手的距離（格）。原版是 3.0。");
         help(ka, "SwingRange", "開始轉頭與揮手的距離，略大於攻擊距離。");
-        help(ka, "RotationTiming", "Normal：一直瞄準。Snap：只在「轉到位時剛好要點」才轉頭（LiquidBounce）。");
-        help(ka, "LazyRotation", "視角已經打得到目標就不再轉（LiquidBounce）。");
-        help(ka, "ShortStop", "偶爾（每 tick 3%）停頓 1–2 tick，只轉一點點，像真人（LiquidBounce）。");
-        help(ka, "FailAim", "偶爾（每 tick 3%）瞄偏 5–10 度 1–4 tick，像真人失誤（LiquidBounce）。");
-        help(ka, "Raycast", "Enemy：視角先碰到別的敵人，就打那個人並改成目標（像真的準星）。None：永遠打選定的目標（LiquidBounce）。");
-        help(ka, "ExitClick", "目標下一 tick 就要離開攻擊距離時，把下一下提早一 tick 打出去（LiquidBounce）。");
-        help(ka, "ScanExtra", "比揮手距離再遠幾格就先轉頭（不揮手），每個目標隨機 ±0.5；0 = 只從揮手距離才轉（LiquidBounce ScanRange）。");
+        help(ka, "RotationTiming", "Normal：一直瞄準。Snap：只在「轉到位時剛好要點」才轉頭。");
+        help(ka, "LazyRotation", "視角已經打得到目標就不再轉。");
+        help(ka, "ShortStop", "偶爾（每 tick 3%）停頓 1–2 tick，只轉一點點，像真人。");
+        help(ka, "FailAim", "偶爾（每 tick 3%）瞄偏 5–10 度 1–4 tick，像真人失誤。");
+        help(ka, "Raycast", "Enemy：視角先碰到別的敵人，就打那個人並改成目標（像真的準星）。None：永遠打選定的目標。");
+        help(ka, "ExitClick", "目標下一 tick 就要離開攻擊距離時，把下一下提早一 tick 打出去。");
+        help(ka, "ScanExtra", "比揮手距離再遠幾格就先轉頭（不揮手），每個目標隨機 ±0.5；0 = 只從揮手距離才轉。");
         help(ka, "RequirePress", "只有按住左鍵時才攻擊。");
         help(ka, "AllowMining", "準心對著方塊且按住左鍵時，讓你挖方塊而不是打人。");
         help(ka, "InventoryCheck", "開著背包、箱子等畫面時不攻擊。");
-        help(ka, "auto-block", "自動格擋方式。LEGIT：打一下舉劍、下個 tick 放下，最像真人 block hit。LiquidBounce：要點的那 tick 先放下、打、立刻再舉，其餘時間舉著；離開揮手距離就放下。");
+        help(ka, "auto-block", "自動格擋方式。LEGIT：打一下舉劍、下個 tick 放下，最像真人 block hit。SameTick：要點的那 tick 先放下、打、立刻再舉，其餘時間舉著；離開揮手距離就放下。");
         help(ka, "AutoBlockCPS", "格擋時的攻擊速度。");
         help(ka, "AutoBlockRange", "目標在這個距離內就舉劍格擋。");
         help(ka, "AutoBlockRequirePress", "只有按住右鍵時才自動格擋。");
@@ -639,6 +642,8 @@ public final class ModuleDocs {
         help(ka, "MaxTurnSpeed", "離目標很遠時每 tick 最多轉幾度（平滑轉回也用這個速度）。");
         help(ka, "Multipoint", "瞄準碰撞箱上離準心最近的點，而不是中心，轉頭量最小。");
         help(ka, "TurnAccel", "轉頭速度每 tick 最多能加快幾度，像手一樣慢慢加速。");
+        help(ka, "AimDrift", "瞄準點在碰撞箱裡慢慢飄動的程度。0 = 永遠瞄最近的邊緣；越高越往箱子裡面一個會慢慢移動的點瞄，不會一直鎖同一點。");
+        help(ka, "FlickOvershoot", "大幅度轉頭時偶爾會稍微轉過頭（最多 4 度），再修正回來，像真人甩槍。");
         help(ka, "Smoothing", "LEGACY 模式的平滑程度。");
         help(ka, "AngleStep", "LEGACY 模式每 tick 最多轉幾度。");
         help(ka, "AimLead", "依延遲往目標移動方向多瞄一點（0 = 不預判；Grim 建議 0）。");

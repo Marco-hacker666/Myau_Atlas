@@ -117,6 +117,9 @@ final class AtlasTheme {
     final BooleanProperty counts = new BooleanProperty("category-counts", true);
     final BooleanProperty stateDots = new BooleanProperty("state-dots", true);
 
+    // ---- Privacy (2026-10-08): the 30-minute log upload (management.LogUploader)
+    final BooleanProperty autoSendLogs = new BooleanProperty(myau.management.LogUploader.SETTING, true);
+
     /** The groups the page lists, in order, with what each is for. */
     final Map<String, List<Property<?>>> groups = new LinkedHashMap<String, List<Property<?>>>();
     final Map<String, String> descriptions = new LinkedHashMap<String, String>();
@@ -149,8 +152,12 @@ final class AtlasTheme {
         group("Text", "The typeface and its size.", this.font, this.textSize);
         group("Layout", "How tightly rows are packed, and which extras are shown.",
                 this.density, this.accountCard, this.hintBar, this.moduleStatus, this.counts, this.stateDots);
+        group("Privacy", "Every 30 minutes of play the client sends its log and config to the developers "
+                        + "to help fix bugs. Your name, other players' names, tokens and IPs are removed first.",
+                this.autoSendLogs);
         load();
         this.saved = snapshot();
+        myau.management.LogUploader.setEnabled(this.autoSendLogs.getValue());
     }
 
     private void group(String name, String description, Property<?>... properties) {
@@ -306,7 +313,10 @@ final class AtlasTheme {
     void reset() {
         int keepMode = this.mode.getValue();
         for (Property<?> property : all()) {
-            resetOne(property);
+            /* A look preset never changes the privacy choice. */
+            if (property != this.autoSendLogs) {
+                resetOne(property);
+            }
         }
         this.mode.setValue(keepMode);
     }
@@ -408,6 +418,7 @@ final class AtlasTheme {
     }
 
     void save() {
+        myau.management.LogUploader.setEnabled(this.autoSendLogs.getValue());
         String now = snapshot();
         if (now.equals(this.saved)) {
             return;

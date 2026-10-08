@@ -56,6 +56,15 @@ public final class BugReport {
     private static final String RELAY_URL = "https://myau-report.myau-atlas.workers.dev/report";
     private static final File RELAY_OVERRIDE = new File(MYAU_DIR, "report-relay.txt");
 
+    /*
+     * 2026-10-08: what the report is about, picked in the dialog (sent in
+     * English; the Chinese labels are only what the menu shows).
+     */
+    public static final String[] REASONS = {"Flagged / banned", "Crash / freeze", "Lag / low FPS",
+            "Module not working", "Visual / menu bug", "Other"};
+    public static final String[] REASONS_ZH = {"被反作弊抓 / 被 ban", "崩潰 / 卡死", "延遲 / FPS 低",
+            "模組沒作用", "畫面 / 選單問題", "其他"};
+
     private BugReport() {
     }
 
@@ -84,7 +93,17 @@ public final class BugReport {
      * clipboard instead, so the click is never wasted.
      */
     public static void send(String description, Result result) {
-        String report = build(description);
+        send(null, description, result);
+    }
+
+    /**
+     * 2026-10-08: the reason picked in the dialog and the player's own words;
+     * the log and the config travel as two files (report.txt, config.txt).
+     */
+    public static void send(String reason, String description, Result result) {
+        String log = buildLog(MARK_REPORT, reason, description);
+        String config = buildConfig();
+        String report = log + "\n" + config;
         File saved = save(report);
         String relay = relayUrl();
         if (relay.isEmpty()) {
@@ -92,16 +111,70 @@ public final class BugReport {
             result.done(false, "no relay configured - copied to the clipboard instead", saved);
             return;
         }
-        String title = title(description);
-        String summary = summary(description);
+        String title = title(reason, description);
+        String summary = summary(reason, description);
+        post(relay, "report", title, summary, log, config, (ok, message) -> mc.addScheduledTask(() -> {
+            if (!ok) {
+                GuiScreen.setClipboardString(report);
+            }
+            result.done(ok, ok ? "sent to #bug-reports" : message + " - copied to the clipboard instead", saved);
+        }));
+    }
+
+    /**
+     * The 30-minute log (LogUploader): the same log and config, no dialog,
+     * nothing said in chat, nothing saved. Built on the game thread.
+     */
+    public static void sendAuto() {
+        String relay = relayUrl();
+        if (relay.isEmpty()) {
+            return;
+        }
+        String head;
+        String config;
+        String title;
+        Redactor redactor;
+        try {
+            /* What only the game thread may read, now; the log files (up to
+               1 MB each) are read on the upload thread, so a mid-fight
+               upload costs no frame time. */
+            redactor = redactor();
+            head = logHead(MARK_AUTO, null, null);
+            config = buildConfig();
+            title = redactor.apply("[" + (Myau.version == null ? "dev" : Myau.version) + "] log - " + server());
+        } catch (Throwable t) {
+            return;
+        }
+        Thread thread = new Thread(() -> {
+            try {
+                StringBuilder sb = new StringBuilder(head);
+                logFiles(sb);
+                post(relay, "auto", title, "", redactor.apply(sb.toString()), config, (ok, message) -> {
+                });
+            } catch (Throwable ignored) {
+                // The next one is in 30 minutes.
+            }
+        }, "Myau log upload");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private interface Sent {
+        void done(boolean ok, String message);
+    }
+
+    /** POSTs to the relay on a daemon thread; answers on that thread. */
+    private static void post(String relay, String kind, String title, String summary, String log, String config, Sent sent) {
         Thread thread = new Thread(() -> {
             boolean ok = false;
             String message;
             try {
                 com.google.gson.JsonObject json = new com.google.gson.JsonObject();
+                json.addProperty("kind", kind);
                 json.addProperty("title", title);
                 json.addProperty("summary", summary);
-                json.addProperty("report", report);
+                json.addProperty("report", log);
+                json.addProperty("config", config);
                 byte[] body = json.toString().getBytes(StandardCharsets.UTF_8);
                 java.net.HttpURLConnection http = (java.net.HttpURLConnection) new java.net.URL(relay).openConnection();
                 http.setRequestMethod("POST");
@@ -124,25 +197,21 @@ public final class BugReport {
                     }
                 }
                 ok = code == 200;
-                message = ok ? "sent to #bug-reports" : "the relay said: " + (reply.isEmpty() ? "HTTP " + code : reply);
+                message = ok ? "sent" : "the relay said: " + (reply.isEmpty() ? "HTTP " + code : reply);
             } catch (Exception e) {
                 message = "could not reach the relay (" + e.getClass().getSimpleName() + ")";
             }
-            boolean sent = ok;
-            String text = message;
-            mc.addScheduledTask(() -> {
-                if (!sent) {
-                    GuiScreen.setClipboardString(report);
-                }
-                result.done(sent, sent ? text : text + " - copied to the clipboard instead", saved);
-            });
+            sent.done(ok, message);
         }, "Myau bug report");
         thread.setDaemon(true);
         thread.start();
     }
 
-    private static String title(String description) {
-        String what = description == null ? "" : description.trim();
+    private static String title(String reason, String description) {
+        String what = description == null ? "" : description.trim().replace('\n', ' ');
+        if (reason != null && !reason.isEmpty()) {
+            what = what.isEmpty() ? reason : reason + ": " + what;
+        }
         if (what.isEmpty()) {
             what = "Report";
         }
@@ -152,8 +221,11 @@ public final class BugReport {
         return redactor().apply("[" + (Myau.version == null ? "dev" : Myau.version) + "] " + what + " - " + server());
     }
 
-    private static String summary(String description) {
+    private static String summary(String reason, String description) {
         StringBuilder sb = new StringBuilder();
+        if (reason != null && !reason.isEmpty()) {
+            sb.append("**Reason:** ").append(reason).append('\n');
+        }
         if (description != null && !description.trim().isEmpty()) {
             sb.append("**What happened:** ").append(description.trim()).append('\n');
         }
@@ -162,7 +234,7 @@ public final class BugReport {
                 .append(" | **Menu:** ").append(setting("ClickGUI", "Style"))
                 .append(" | **OptiFine:** ").append(optifine() ? (FramebufferCompat.optifineFastRender() ? "Fast Render ON" : "yes") : "no")
                 .append('\n');
-        sb.append("Full report attached (names, tokens and IPs removed).");
+        sb.append("Log (report.txt) and config (config.txt) attached; names, tokens and IPs removed.");
         return redactor().apply(sb.toString());
     }
 
@@ -188,15 +260,40 @@ public final class BugReport {
         return save(text);
     }
 
+    /** The relay checks for these: a report, or a 30-minute log. */
+    private static final String MARK_REPORT = "**Myau Atlas bug report**";
+    private static final String MARK_AUTO = "**Myau Atlas log**";
+
+    /** Log and config together (the clipboard copy). */
     public static String build(String description) {
+        return buildLog(MARK_REPORT, null, description) + "\n" + buildConfig();
+    }
+
+    /**
+     * The log part (2026-10-08: longer -- 150 flag lines, 80 placement and
+     * Clutch lines, 60 fight and hit lines, 250 game-log lines -- and without
+     * the module settings, which are the config part now).
+     */
+    public static String buildLog(String mark, String reason, String description) {
+        StringBuilder sb = new StringBuilder(logHead(mark, reason, description));
+        logFiles(sb);
+        return redactor().apply(sb.toString());
+    }
+
+    /** The part read from the game (GL strings, display, modules): game thread only. */
+    private static String logHead(String mark, String reason, String description) {
         StringBuilder sb = new StringBuilder();
-        sb.append("**Myau Atlas bug report**\n");
-        sb.append("What happened: ").append(description == null ? "" : description.trim()).append('\n');
-        sb.append("How to reproduce: \n");
+        sb.append(mark).append('\n');
+        if (MARK_REPORT.equals(mark)) {
+            sb.append("Reason: ").append(reason == null || reason.isEmpty() ? "(not given)" : reason).append('\n');
+            sb.append("What happened: ").append(description == null ? "" : description.trim()).append('\n');
+        } else {
+            sb.append("Sent automatically every 30 minutes of play (Client Settings > auto-send-logs).\n");
+        }
         sb.append("```\n");
 
         section(sb, "Client");
-        line(sb, "Version", "OpenMyau+ " + (Myau.version == null ? "dev" : Myau.version) + " | MC 1.8.9 | Forge "
+        line(sb, "Version", "Myau Atlas v" + (Myau.version == null ? "dev" : Myau.version) + " | MC 1.8.9 | Forge "
                 + safe(ForgeVersion::getVersion));
         line(sb, "Click menu", setting("ClickGUI", "Style"));
         line(sb, "Java", System.getProperty("java.version") + " (" + System.getProperty("java.vendor") + ")");
@@ -211,18 +308,36 @@ public final class BugReport {
         line(sb, "Server", server() + ", ping " + Ping.own() + " ms");
         line(sb, "Other mods", otherMods());
 
-        section(sb, "Enabled modules");
+        List<String> on = new ArrayList<String>();
         for (Module module : Myau.moduleManager.modules.values()) {
             if (module.isEnabled()) {
-                sb.append(module.getName()).append(": ").append(settings(module)).append('\n');
+                on.add(module.getName());
             }
         }
+        line(sb, "Enabled modules", on.isEmpty() ? "none" : String.join(", ", on) + "  (settings: config.txt)");
+        return sb.toString();
+    }
 
-        tail(sb, "FlagDetector (last 25)", newest("flags-"), 25);
-        tail(sb, "Placements (last 15)", newest("places-"), 15);
-        tail(sb, "Clutch (last 15)", newest("clutch-"), 15);
-        gameLog(sb, 40);
+    /** The part read from files: any thread. */
+    private static void logFiles(StringBuilder sb) {
+        tail(sb, "FlagDetector (last 150)", newest("flags-"), 150);
+        tail(sb, "Placements (last 80)", newest("places-"), 80);
+        tail(sb, "Clutch (last 80)", newest("clutch-"), 80);
+        tail(sb, "Fights (last 60)", newest("fights-"), 60);
+        tail(sb, "Hits (last 60)", newest("hits-"), 60);
+        gameLog(sb, 250);
         sb.append("```\n");
+    }
+
+    /** The config part: every module, on or off, with all its settings. */
+    public static String buildConfig() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Myau Atlas config (").append(Myau.version == null ? "dev" : Myau.version).append(")\n");
+        sb.append("[x] = enabled\n\n");
+        for (Module module : Myau.moduleManager.modules.values()) {
+            sb.append(module.isEnabled() ? "[x] " : "[ ] ").append(module.getName()).append(": ")
+                    .append(settings(module)).append('\n');
+        }
         return redactor().apply(sb.toString());
     }
 
@@ -365,7 +480,7 @@ public final class BugReport {
         }
     }
 
-    /** The last lines of a file (reading at most its last 256 KB), optionally only matching ones. */
+    /** The last lines of a file (reading at most its last 1 MB), optionally only matching ones. */
     private static List<String> lastLines(File file, int count, Pattern keep) {
         List<String> out = new ArrayList<String>();
         if (file == null || !file.isFile()) {
@@ -373,7 +488,7 @@ public final class BugReport {
         }
         try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
             long length = raf.length();
-            long start = Math.max(0, length - 256 * 1024);
+            long start = Math.max(0, length - 1024 * 1024);
             byte[] bytes = new byte[(int) (length - start)];
             raf.seek(start);
             raf.readFully(bytes);

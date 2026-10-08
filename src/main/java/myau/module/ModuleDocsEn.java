@@ -226,6 +226,7 @@ final class ModuleDocsEn {
 
         // ========================================================== HEADINGS
         heading("一般", "General");
+        heading("常用", "Main");
         heading("目標", "Targets");
         heading("出手", "Attacking");
         heading("格擋", "Blocking");
@@ -370,22 +371,22 @@ final class ModuleDocsEn {
         help(ka, "Mode", "Single keeps one target; Switch moves to the next one every SwitchDelay.");
         help(ka, "Sort", "Target priority: distance, health, hurt time, or nearest the crosshair.");
         help(ka, "SwitchDelay", "How often the target is re-chosen (ms); in Switch mode also the switch interval.");
-        help(ka, "CPS Mode", "Normal: random between MinCPS and MaxCPS. Record: a recorded human click rhythm (about 9.8 CPS). Human: LiquidBounce's human clicker, one rate per combo drawn from MinCPS-MaxCPS, log-normal intervals.");
+        help(ka, "CPS Mode", "Normal: random between MinCPS and MaxCPS. Record: a recorded human click rhythm (about 9.8 CPS). Human: a human clicker, one rate per combo drawn from MinCPS-MaxCPS, log-normal intervals.");
         help(ka, "MinCPS", "Lowest attacks per second (random between the two; ticks cap it at 20).");
         help(ka, "MaxCPS", "Highest attacks per second.");
         help(ka, "AttackRange", "Distance at which it actually attacks (blocks). Vanilla is 3.0.");
         help(ka, "SwingRange", "Distance at which it starts turning and swinging; a little more than the attack range.");
-        help(ka, "RotationTiming", "Normal: always aim. Snap: turn only when the click will be due as the aim lands (LiquidBounce).");
-        help(ka, "LazyRotation", "Do not turn while the look already hits the target (LiquidBounce).");
-        help(ka, "ShortStop", "Now and then (3% a tick) almost stop turning for 1-2 ticks, like a human (LiquidBounce).");
-        help(ka, "FailAim", "Now and then (3% a tick) aim 5-10 degrees off for 1-4 ticks, like a human miss (LiquidBounce).");
-        help(ka, "Raycast", "Enemy: if the look hits another enemy first, hit that one and make it the target, as a real crosshair would. None: always the chosen target (LiquidBounce).");
-        help(ka, "ExitClick", "When the target is about to leave attack range next tick, the next click comes one tick early (LiquidBounce).");
-        help(ka, "ScanExtra", "Blocks beyond the swing range at which it already turns to the target, without swinging; +-0.5 per target; 0 = turn from the swing range only (LiquidBounce ScanRange).");
+        help(ka, "RotationTiming", "Normal: always aim. Snap: turn only when the click will be due as the aim lands.");
+        help(ka, "LazyRotation", "Do not turn while the look already hits the target.");
+        help(ka, "ShortStop", "Now and then (3% a tick) almost stop turning for 1-2 ticks, like a human.");
+        help(ka, "FailAim", "Now and then (3% a tick) aim 5-10 degrees off for 1-4 ticks, like a human miss.");
+        help(ka, "Raycast", "Enemy: if the look hits another enemy first, hit that one and make it the target, as a real crosshair would. None: always the chosen target.");
+        help(ka, "ExitClick", "When the target is about to leave attack range next tick, the next click comes one tick early.");
+        help(ka, "ScanExtra", "Blocks beyond the swing range at which it already turns to the target, without swinging; +-0.5 per target; 0 = turn from the swing range only.");
         help(ka, "RequirePress", "Only attack while the attack key is held.");
         help(ka, "AllowMining", "With the crosshair on a block and the attack key held, mine instead of attacking.");
         help(ka, "InventoryCheck", "No attacks while an inventory or chest screen is open.");
-        help(ka, "auto-block", "How it blocks. LEGIT: hit and raise the sword, lower it next tick, like a real block hit. LiquidBounce: on a click tick lower, hit and raise again at once; blocking between clicks; lowered out of swing range.");
+        help(ka, "auto-block", "How it blocks. LEGIT: hit and raise the sword, lower it next tick, like a real block hit. SameTick: on a click tick lower, hit and raise again at once; blocking between clicks; lowered out of swing range.");
         help(ka, "AutoBlockCPS", "Attack speed while blocking.");
         help(ka, "AutoBlockRange", "Raise the sword when the target is within this distance.");
         help(ka, "AutoBlockRequirePress", "Only block while the use key is held.");
@@ -398,6 +399,8 @@ final class ModuleDocsEn {
         help(ka, "MaxTurnSpeed", "Most degrees per tick when far off (also the speed of SmoothBack).");
         help(ka, "Multipoint", "Aim at the point of the hitbox nearest the crosshair rather than its centre: the least turning.");
         help(ka, "TurnAccel", "How much faster the turn may get each tick, building up like a hand.");
+        help(ka, "AimDrift", "How far the aim point wanders inside the hitbox. 0 = always the nearest edge; higher aims at a slowly moving point inside the box instead of one fixed spot.");
+        help(ka, "FlickOvershoot", "Long turns sometimes carry a little past the target (at most 4 degrees) and come back, like a real flick.");
         help(ka, "Smoothing", "LEGACY mode's smoothing.");
         help(ka, "AngleStep", "LEGACY mode's most degrees per tick.");
         help(ka, "AimLead", "Aim ahead along the target's movement by your latency (0 = no lead; 0 recommended on Grim).");

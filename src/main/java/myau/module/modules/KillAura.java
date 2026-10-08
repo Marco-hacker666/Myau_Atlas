@@ -150,6 +150,15 @@ public class KillAura extends Module {
     /* SMOOTHSTEP: the most the turn may grow from one tick to the next. A
        hand gets up to speed; it does not go from still to 70 degrees a tick. */
     public final IntProperty turnAccel;
+    /*
+     * 2026-10-08 human aim (SMOOTHSTEP). AimDrift: how far the aim point leaves
+     * the nearest point of the hitbox for a slowly wandering point inside it,
+     * instead of always parking on the edge nearest the crosshair.
+     * FlickOvershoot: a long turn sometimes carries a little past the target
+     * and comes back, as a hand does.
+     */
+    public final FloatProperty aimDrift = new FloatProperty("AimDrift", 0.5F, 0.0F, 1.0F);
+    public final BooleanProperty flickOvershoot = new BooleanProperty("FlickOvershoot", true);
     public final BooleanProperty throughWalls;
     public final BooleanProperty requirePress;
     public final BooleanProperty allowMining;
@@ -283,7 +292,11 @@ public class KillAura extends Module {
 
         this.mode = new ModeProperty("Mode", 1, new String[]{"Single", "Switch"});
         this.sort = new ModeProperty("Sort", 1, new String[]{"Distance", "Health", "HurtTime", "FOV"});
-        this.autoBlock = new ModeProperty("auto-block", 3, new String[]{"NONE", "VANILLA", "SPOOF", "HYPIXEL", "BLINK", "INTERACT", "SWAP", "LEGIT", "FAKE", "Morden", "LiquidBounce"});
+        this.autoBlock = new ModeProperty("auto-block", 3, new String[]{"NONE", "VANILLA", "SPOOF", "HYPIXEL", "BLINK", "INTERACT", "SWAP", "LEGIT", "FAKE", "Morden", "SameTick"})
+                /* 2026-10-08: the menu keeps the tuned modes; the rest stay
+                   in the code for old configs. */
+                .hide("VANILLA", "SPOOF", "BLINK", "INTERACT", "SWAP", "FAKE", "Morden")
+                .alias("LiquidBounce", "SameTick");
         this.autoBlockCPS = new FloatProperty("AutoBlockCPS", 8.0F, 1.0F, 10.0F);
         this.autoBlockRequirePress = new BooleanProperty("AutoBlockRequirePress", false);
         this.autoBlockRange = new FloatProperty("AutoBlockRange", 6.0F, 3.0F, 8.0F);
@@ -294,7 +307,8 @@ public class KillAura extends Module {
         this.maxCPS = new IntProperty("MaxCPS", 14, 1, 20);
         this.cps = myau.property.IntRange.of(this.minCPS, this.maxCPS);
         this.switchDelay = new IntProperty("SwitchDelay", 150, 0, 1000);
-        this.rotations = new ModeProperty("Rotations", 2, new String[]{"NONE", "Legit", "Silent", "LockView", "LiquidBounce", "Hypixel", "Advanced"});
+        this.rotations = new ModeProperty("Rotations", 2, new String[]{"NONE", "Legit", "Silent", "LockView", "LiquidBounce", "Hypixel", "Advanced"})
+                .hide("LockView", "LiquidBounce", "Hypixel");
         this.deadZoneSize = new FloatProperty("DeadZone", 0.5F, 0.0F, 2.0F, () -> rotations.getValue() == 4);
         this.maxTurnSpeed = new FloatProperty("MaxSpeed", 25.0F, 5.0F, 180.0F, () -> rotations.getValue() == 4);
         this.minTurnSpeed = new FloatProperty("MinSpeed", 5.0F, 1.0F, 90.0F, () -> rotations.getValue() == 4);
@@ -354,9 +368,12 @@ public class KillAura extends Module {
            LEGACY, the CPS range for Normal CPS. MaxTurnSpeed and TurnAccel
            also drive SmoothBack's turn back in every rotating mode. */
         java.util.function.BooleanSupplier plainAim = () -> rotations.getValue() >= 1 && rotations.getValue() <= 3;
-        this.aimMode.when(plainAim);
+        /* SMOOTHSTEP is the aim; the switch only shows while on LEGACY. */
+        this.aimMode.when(() -> plainAim.getAsBoolean() && aimMode.getValue() == 0);
         this.aimMinSpeed.when(plainAim);
         this.multipoint.when(plainAim);
+        this.aimDrift.when(() -> plainAim.getAsBoolean() && aimMode.getValue() == 1 && multipoint.getValue());
+        this.flickOvershoot.when(() -> plainAim.getAsBoolean() && aimMode.getValue() == 1);
         java.util.function.BooleanSupplier turnBack = () -> plainAim.getAsBoolean() && aimMode.getValue() == 1
                 || rotations.getValue() != 0 && rotations.getValue() != 3 && smoothBack.getValue();
         this.aimMaxSpeed.when(turnBack);
@@ -2440,19 +2457,96 @@ public class KillAura extends Module {
      */
     private final RotationEngine aimEngine = new RotationEngine();
 
+    /* Human aim state (2026-10-08): the wandering aim point (-1..1 across the
+       aim box on each axis) and the goal it eases toward; the per-flick speed
+       and its slow wobble; the overshoot carried past the target. */
+    private EntityLivingBase humanAimFor;
+    private float driftX, driftY, driftZ;
+    private float driftGoalX, driftGoalY, driftGoalZ;
+    private int driftTicks;
+    private float flickSpeed = 1.0F;
+    private float speedWobble;
+    private float lastAimDistance;
+    private float overYaw, overPitch;
+    private boolean overArmed;
+
     private float[] stepTowards(float currentYaw, float currentPitch) {
+        if (this.humanAimFor != this.target.entity) {
+            /* A new target: a fresh point, and no overshoot from the last one. */
+            this.humanAimFor = this.target.entity;
+            this.driftTicks = 0;
+            this.overYaw = 0.0F;
+            this.overPitch = 0.0F;
+            this.overArmed = false;
+            this.lastAimDistance = 0.0F;
+        }
         float[] full;
         if (this.multipoint.getValue()) {
             /* The same vertical band the centre aim uses (5-75% of the
                height), and a margin off the sides for the target to move in. */
             AxisAlignedBB aim = RotationEngine.aimBox(this.target.getBox(), 0.15, 0.05, 0.75);
             Vec3 eyes = mc.thePlayer.getPositionEyes(1.0F);
-            full = RotationEngine.rotationsTo(eyes,
-                    RotationEngine.nearestOnBox(aim, eyes, currentYaw, currentPitch), currentYaw);
+            Vec3 point = RotationEngine.nearestOnBox(aim, eyes, currentYaw, currentPitch);
+            float weight = this.aimDrift.getValue();
+            if (weight > 0.0F) {
+                /* A point inside the box that wanders: a new goal every
+                   0.3-0.7s, eased toward, so the aim never sits on one spot
+                   nor jumps between spots. */
+                if (--this.driftTicks <= 0) {
+                    this.driftTicks = 6 + this.random.nextInt(9);
+                    this.driftGoalX = this.random.nextFloat() * 2.0F - 1.0F;
+                    this.driftGoalY = this.random.nextFloat() * 2.0F - 1.0F;
+                    this.driftGoalZ = this.random.nextFloat() * 2.0F - 1.0F;
+                }
+                this.driftX += (this.driftGoalX - this.driftX) * 0.2F;
+                this.driftY += (this.driftGoalY - this.driftY) * 0.2F;
+                this.driftZ += (this.driftGoalZ - this.driftZ) * 0.2F;
+                double cx = (aim.minX + aim.maxX) / 2.0 + this.driftX * (aim.maxX - aim.minX) / 2.0;
+                double cy = (aim.minY + aim.maxY) / 2.0 + this.driftY * (aim.maxY - aim.minY) / 2.0;
+                double cz = (aim.minZ + aim.maxZ) / 2.0 + this.driftZ * (aim.maxZ - aim.minZ) / 2.0;
+                point = new Vec3(point.xCoord + (cx - point.xCoord) * weight,
+                        point.yCoord + (cy - point.yCoord) * weight,
+                        point.zCoord + (cz - point.zCoord) * weight);
+            }
+            full = RotationEngine.rotationsTo(eyes, point, currentYaw);
         } else {
             full = RotationUtil.getRotationsToBox(
                     this.target.getBox(), currentYaw, currentPitch, 180.0F, 0.0F);
         }
+
+        float rawYaw = MathHelper.wrapAngleTo180_float(full[0] - currentYaw);
+        float rawPitch = full[1] - currentPitch;
+        float rawDistance = (float) Math.sqrt(rawYaw * rawYaw + rawPitch * rawPitch);
+        if (rawDistance > 12.0F && this.lastAimDistance <= 12.0F) {
+            /* A flick starts: this one's own pace, as no two are alike. */
+            this.flickSpeed = 0.85F + this.random.nextFloat() * 0.3F;
+        }
+        if (this.flickOvershoot.getValue() && rawDistance > 20.0F && this.lastAimDistance <= 20.0F
+                && !this.overArmed && this.random.nextInt(100) < 60) {
+            /* Aim 4-12% past the target along the turn (at most 4 degrees). */
+            float amount = Math.min(4.0F, rawDistance * (0.04F + this.random.nextFloat() * 0.08F));
+            this.overYaw = rawYaw / rawDistance * amount;
+            this.overPitch = rawPitch / rawDistance * amount * 0.5F;
+            this.overArmed = true;
+        }
+        this.lastAimDistance = rawDistance;
+        if (this.overArmed) {
+            float leftYaw = rawYaw + this.overYaw;
+            float leftPitch = rawPitch + this.overPitch;
+            if (leftYaw * leftYaw + leftPitch * leftPitch < 2.25F) {
+                /* Arrived past it: now come back over the next few ticks. */
+                this.overArmed = false;
+            }
+        } else {
+            this.overYaw *= 0.45F;
+            this.overPitch *= 0.45F;
+            if (Math.abs(this.overYaw) + Math.abs(this.overPitch) < 0.1F) {
+                this.overYaw = 0.0F;
+                this.overPitch = 0.0F;
+            }
+        }
+        full = new float[]{full[0] + this.overYaw,
+                MathHelper.clamp_float(full[1] + this.overPitch, -90.0F, 90.0F)};
 
         float deltaYaw = MathHelper.wrapAngleTo180_float(full[0] - currentYaw);
         float deltaPitch = full[1] - currentPitch;
@@ -2468,7 +2562,11 @@ public class KillAura extends Module {
         float t = Math.min(1.0F, distance / 60.0F);
         float shaped = t * t * (3.0F - 2.0F * t);
         float step = min + (max - min) * shaped;
-        step *= 1.0F + RandomUtil.nextFloat(-0.08F, 0.08F);
+        /* Speed varies per flick and wobbles slowly within it, rather than
+           a fresh +-8% each tick: independent per-tick noise is itself a
+           pattern a check can see. */
+        this.speedWobble = this.speedWobble * 0.8F + (float) this.random.nextGaussian() * 0.03F;
+        step *= this.flickSpeed * (1.0F + Math.max(-0.12F, Math.min(0.12F, this.speedWobble)));
 
         /* The step, capped by how fast the turn may grow, on the mouse grid. */
         return this.aimEngine.step(currentYaw, currentPitch, full[0], full[1], step,

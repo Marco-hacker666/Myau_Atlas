@@ -4035,3 +4035,126 @@ Write tool.
 - Build: 266 tests pass, md5 c41c89b6804df7779eb682b007799ded.
 - Installed with the game closed; the previous jar is backups/jars/Myau+UI_fixed.jar.pre-anim-20261008.
 - Install checks: 62 classes under myau/mixin, one Myau jar in mods.
+
+## 2026-10-08 — KillAura: more human aim (AimDrift, FlickOvershoot, per-flick speed)
+
+Gap 3 of the "what is missing against paid clients" list: the SMOOTHSTEP aim
+(the owner's setup: Rotations Legit, AimMode SMOOTHSTEP, Multipoint on) was
+too regular for behaviour checks such as Polar's. Three changes, all in
+`KillAura.stepTowards`:
+
+- **AimDrift** (FloatProperty, 0.5, 0-1; shown with Multipoint): the aim point
+  is no longer always the nearest point of the aim box. A point inside the box
+  wanders (a new random goal every 6-14 ticks, eased 20% a tick), and the aim
+  point is the nearest point moved `AimDrift` of the way toward it. 0 is the
+  old behaviour. The box is the same inset aim box, so hits still land.
+- **FlickOvershoot** (BooleanProperty, true): when the angle to the target
+  crosses above 20 degrees (the start of a flick), 60% of the time the aim
+  target is pushed 4-12% of the angle past it along the turn (max 4 degrees,
+  pitch half). Once within 1.5 degrees of the pushed point the push decays
+  x0.45 per tick: the aim comes back by itself. Reset on a new target.
+- **Per-flick speed**: the old independent +-8% per-tick speed jitter is
+  replaced by a speed picked per flick (0.85-1.15, when the angle crosses 12
+  degrees) times a slow AR(1) wobble (0.8 decay, sigma 0.03, clamped +-12%).
+  Independent per-tick noise is itself a statistical signature.
+
+Unchanged: TurnAccel still caps how fast the turn grows, the smoothstep still
+slows it near the target, the tremor and LazyRotation/ShortStop/FailAim still
+apply after (processAim), and the mouse-grid snapping in RotationEngine.
+
+Docs: ModuleDocs / ModuleDocsEn help for both settings; both added to the
+"轉頭" group. Build 266 tests OK, md5 e3ff281df7e2e6fd55c04dfecdef3281,
+installed (previous jar: backups/jars/Myau+UI_fixed.jar.pre-humanaim-20261008),
+62 mixins. Sources: backups/src/pre-humanaim-20261008 and humanaim-20261008.
+To tune: AimDrift 0 = old aim point; FlickOvershoot off = no overshoot.
+
+## 2026-10-08 — Fewer modes in KillAura / Scaffold menus, important settings first
+
+The owner asked for the many KillAura and Scaffold modes to be cut down to a
+few, with the important settings at the top. Modes are hidden, not deleted:
+the code and every index-based branch stay as they were, and an old config
+naming a hidden mode still loads and works.
+
+- `ModeProperty.hide(names...)`: hidden modes are left out of
+  `getValuePrompt()` (the list both ClickGUIs draw) and skipped by
+  `nextMode` / `previousMode`. While a hidden mode is the current value it is
+  listed too, so it can be switched away from. `visibleIndices()` maps a menu
+  row to the real index; `setVisible(row)` picks by row. AtlasClickGui
+  (dropdown pick, current-row highlight, theme swatches) and the normal
+  Dropdown now go through it -- before, both used the row as the index.
+- `ModeProperty.alias(old, now)`: an old name in a config loads as the new one
+  (and is saved under the new name next time).
+- KillAura `Rotations`: menu shows NONE / Legit / Silent / Advanced (hidden:
+  LockView, LiquidBounce, Hypixel, with their LB-* / Hypixel* settings, which
+  were already conditional on the mode). `AimMode` row only shows while on
+  LEGACY (SMOOTHSTEP is the aim), so Smoothing / AngleStep disappear with it.
+- KillAura `auto-block`: NONE / HYPIXEL / LEGIT / SameTick (hidden: VANILLA,
+  SPOOF, BLINK, INTERACT, SWAP, FAKE, Morden). The mode formerly named
+  "LiquidBounce" is now "SameTick" (alias keeps old configs).
+- Scaffold `rotations`: NONE / DEFAULT / GODBRIDGE / SNAP (hidden: BACKWARDS,
+  SIDEWAYS, SMOOTH, Hypixel, 3FMC, SNAP2). Typo GODBIRGDE fixed to GODBRIDGE
+  (alias).
+- ModuleDocs groups: a "常用" group first. KillAura: Rotations, CPS Mode,
+  MinCPS, MaxCPS, AttackRange, SwingRange, auto-block, Mode, MoveFix.
+  Scaffold: rotations, sprint, tower, keep-y, safe-walk, move-fix, turn-speed.
+  They were removed from their old groups.
+- KillAura help texts no longer name another client.
+
+Test: `src/test/java/myau/property/ModePropertyTest.java` (5). Build 271 tests
+OK, md5 c39998f336ecb30b08a52b774193ee4f. To bring a mode back: remove it from
+the `.hide(...)` call.
+
+## 2026-10-08 — Report dialog with reasons and description; longer logs; log and config apart; auto-send logs
+
+**Dialog** (AtlasClickGui `drawReportConfirm`, opened by `openReport()`): the owner wanted testers to say why.
+Six reasons as chips, one required before Send works (`BugReport.REASONS`, sent in English; `REASONS_ZH` shown
+when the menu language is 中文): Flagged / banned, Crash / freeze, Lag / low FPS, Module not working,
+Visual / menu bug, Other. Below, a text box (always focused while the dialog is open): typing, Backspace,
+Ctrl+V paste, 500 characters max, wrapped to the last 4 lines. Enter sends, Esc / Cancel / a click outside
+closes. Dialog text follows the menu language. `.report [text]` still sends with no reason ("(not given)").
+
+**Report** (`BugReport`): `send(reason, description, result)`. The log and the config are now two parts and
+two Discord attachments: `report.txt` (header + logs) and `config.txt` (every module, `[x]` when enabled, with
+all its settings -- before, only enabled modules were in the report). Longer logs: FlagDetector 150 lines,
+placements 80, Clutch 80, fights 60 (new), hits 60 (new), game log 250 (was 25/15/15/-/-/40), read from the last
+1 MB of each file (was 256 KB). Still redacted (Redactor) before leaving. The saved copy and the clipboard copy
+hold both parts.
+
+**Auto-send logs** (`management.LogUploader`, registered in Myau.java): every 30 minutes of **play** (ticks with
+a world loaded; 36000 PRE ticks) it calls `BugReport.sendAuto()`: header and config built on the game thread,
+the log files read and the upload done on a daemon thread (no frame cost). Nothing in chat, nothing saved.
+Switch: `auto-send-logs` in Client Settings > Appearance > **Privacy** (AtlasTheme group), default on. Stored in
+`atlas-theme.json`; LogUploader reads it from the file the first time (the menu may never be opened) and
+AtlasTheme pushes it on load and on save. Appearance presets / reset never change it. The first time it would
+send, a one-time chat line says what is sent and where to turn it off (marker
+`config/Myau/auto-send-logs-notice.txt`).
+
+**Relay** (`report-relay/src/index.js`, deployed version b1de3254): body up to 1 MB, log up to 600 KB, config up
+to 300 KB (must start with "Myau Atlas config"), attached as config.txt. `kind: "auto"` needs the marker
+"Myau Atlas log", goes to the **LOG_WEBHOOK** secret (not #bug-reports), 4 per IP per hour (KV key `auto:`);
+reports keep 3 per 10 min (key `ip:` unchanged). Without LOG_WEBHOOK, auto logs get 503 and nothing is posted --
+**the owner has to create a log channel webhook and run `npx wrangler secret put LOG_WEBHOOK`**. Old clients
+(no kind / config) still work. Local tests (mocked Discord + KV): report → report.txt + config.txt; auto without
+LOG_WEBHOOK 503; auto ×4 200 then 429; reports unaffected by the auto allowance; wrong marker 400; bad config
+400; old client 200. Live: auto → 503, junk → 400, nothing posted.
+
+Build 271 tests OK, md5 d244423a069cbbf0b125245486ffe568, **installed** (game closed, gated), 62 mixins.
+Backups: `backups/src/pre-report2-20261008` (incl. relay-src), `backups/src/report2-20261008`,
+`backups/jars/Myau+UI_fixed.jar.pre-report2-20261008`.
+
+## 2026-10-08 — English heading for the new "常用" settings group
+The "常用" group added to KillAura / Scaffold had no English heading, so it showed in Chinese with the menu in
+English (the owner's setting). `ModuleDocsEn`: `heading("常用", "Main")`. Built, md5 734c1c75; not installed yet
+(game running). Backup: `backups/src/ModuleDocsEn.java.pre-main-heading-20261008`.
+
+## 2026-10-08 — Real version numbers (every build said "dev")
+Reports, the window title and HUD watermarks showed "dev". Cause: `Myau` read `/version.json` with
+`getResourceAsStream`, and Forge's own jar (forge-1.8.9-11.15.1.2318) has a `version.json` (its launcher profile:
+id, time, ... no "version") that the class loader finds first, so `get("version")` threw and the fallback "dev"
+won. Fix: the resource is now `myau-version.json` (renamed in src/main/resources, `filesMatching` in
+build.gradle.kts, Myau.java). The version follows the Myau Atlas release numbering instead of the old fork's
+`2.1+4`: `gradle.properties` `version = 1.5.0` (v1.4.0 is the last GitHub release; this build is the next one).
+**Bump it for every release.** The report's Version line now reads "Myau Atlas v1.5.0". Build output is now
+`build/libs/Myau+.jar-1.5.0.jar`. Built, md5 eb36ba58976c22cdf09a9be3b443d523, **installed** (game closed,
+gated), 62 mixins; includes the "Main" heading fix. Backups: `backups/src/*.pre-version-20261008`,
+`backups/jars/Myau+UI_fixed.jar.pre-version-20261008`.

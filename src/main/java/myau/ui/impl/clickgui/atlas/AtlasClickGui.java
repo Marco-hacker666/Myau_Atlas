@@ -1025,13 +1025,64 @@ public class AtlasClickGui extends GuiScreen {
 
     /** The bug-report dialog is open: nothing is sent until Send. */
     private boolean reportConfirm;
+    /* 2026-10-08: the reason picked (an index of BugReport.REASONS, -1 none
+       yet) and what the player typed about it. */
+    private int reportReason = -1;
+    private String reportText = "";
+    private static final int REPORT_TEXT_MAX = 500;
+
+    private void openReport() {
+        this.reportConfirm = true;
+        this.reportReason = -1;
+        this.reportText = "";
+    }
+
+    private boolean reportChinese() {
+        return this.theme.language.getValue() == 0;
+    }
 
     private void sendReport() {
+        if (this.reportReason < 0) {
+            /* A reason is required: the Send button says so. */
+            pulse("btn:reportSend");
+            return;
+        }
         this.reportConfirm = false;
         if (Myau.notificationManager != null) {
             Myau.notificationManager.add("Sending bug report...", 2000L);
         }
-        myau.util.BugReport.send(null, myau.command.commands.ReportCommand::announce);
+        myau.util.BugReport.send(myau.util.BugReport.REASONS[this.reportReason], this.reportText,
+                myau.command.commands.ReportCommand::announce);
+    }
+
+    /** Text cut into lines no wider than {@code width}; the last {@code max} lines if more. */
+    private static List<String> wrapReport(LiquidFont font, String text, float width, int max) {
+        List<String> lines = new ArrayList<String>();
+        StringBuilder current = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '\n') {
+                lines.add(current.toString());
+                current.setLength(0);
+                continue;
+            }
+            current.append(c);
+            if (font.width(current.toString()) > width) {
+                String full = current.toString();
+                int cut = full.lastIndexOf(' ');
+                if (cut <= 0) {
+                    cut = full.length() - 1;
+                }
+                lines.add(full.substring(0, cut));
+                current.setLength(0);
+                current.append(full.substring(cut).replaceFirst("^ ", ""));
+            }
+        }
+        lines.add(current.toString());
+        while (lines.size() > max) {
+            lines.remove(0);
+        }
+        return lines;
     }
 
     /** An amber warning triangle with an exclamation mark, centred on (cx, cy). */
@@ -1056,8 +1107,9 @@ public class AtlasClickGui extends GuiScreen {
         Liquid.rect(x, y, x + width, y + height, RADIUS, 0x99000000, 0xAA000000);
         hit("reportOutside", null, x, y, x + width, y + height);
 
-        float w = 320.0F;
-        float h = 178.0F;
+        boolean zh = reportChinese();
+        float w = Math.min(380.0F, width - 20.0F);
+        float h = 276.0F;
         float bx = x + (width - w) / 2.0F;
         float by = y + (height - h) / 2.0F;
         Liquid.shadow(bx, by, bx + w, by + h, 16.0F, 18.0F, 0x80000000, 4.0F);
@@ -1067,30 +1119,87 @@ public class AtlasClickGui extends GuiScreen {
         hit("reportDialog", null, bx, by, bx + w, by + h);
 
         float cx = bx + w / 2.0F;
-        drawWarning(cx, by + 26.0F, 11.0F);
-        font(13.0F, true).drawCentred("Send a bug report?", cx, by + 50.0F, TEXT);
+        int accent = accent();
+        drawWarning(cx, by + 22.0F, 10.0F);
+        font(13.0F, true).drawCentred(zh ? "回報問題" : "Send a bug report", cx, by + 44.0F, TEXT);
 
-        LiquidFont body = font(8.5F, false);
-        float line = by + 70.0F;
-        String[] lines = {
-                "This uploads a report to the Discord #bug-reports channel:",
-                "versions, OptiFine, your enabled modules and their settings,",
-                "the latest flag / placement / Clutch logs and game warnings.",
-                "Your name, other players' names, tokens and IPs are removed."
-        };
-        for (int i = 0; i < lines.length; i++) {
-            body.drawCentred(lines[i], cx, line + i * 12.0F, i == 3 ? alpha(0xFFFFC857, 0.95F) : DIM);
+        /* What went wrong: one of a few reasons, required. */
+        LiquidFont label = font(8.0F, true);
+        label.draw(zh ? "發生什麼問題？（必選）" : "What went wrong? (pick one)", bx + 18, by + 64.0F, DIM);
+        String[] reasons = zh ? myau.util.BugReport.REASONS_ZH : myau.util.BugReport.REASONS;
+        float chipGap = 6.0F;
+        float chipW = (w - 36.0F - chipGap * 2.0F) / 3.0F;
+        float chipH = 18.0F;
+        LiquidFont chipFont = font(8.0F, false);
+        for (int i = 0; i < reasons.length; i++) {
+            float chipX = bx + 18 + (i % 3) * (chipW + chipGap);
+            float chipY = by + 74.0F + (i / 3) * (chipH + chipGap);
+            boolean picked = i == this.reportReason;
+            boolean hovered = mx >= chipX && mx <= chipX + chipW && my >= chipY && my <= chipY + chipH;
+            hit("reportReason", Integer.valueOf(i), chipX, chipY, chipX + chipW, chipY + chipH);
+            float lit = ease("reportReason:" + i, picked, 14.0F);
+            float hover = ease("reportReasonHover:" + i, hovered, 12.0F);
+            Liquid.rect(chipX, chipY, chipX + chipW, chipY + chipH, 9.0F,
+                    alpha(accent, 0.10F + 0.22F * lit + 0.06F * hover), ink(0x08));
+            Liquid.rim(chipX, chipY, chipX + chipW, chipY + chipH, 9.0F, 1.0F,
+                    blend(ink(0x26), alpha(accent, 0.9F), lit), ink(0x0A));
+            chipFont.drawCentred(chipFont.trim(reasons[i], chipW - 8.0F), chipX + chipW / 2.0F, chipY + chipH / 2.0F,
+                    picked ? TEXT : DIM);
         }
 
-        float buttonsY = by + h - 22.0F;
-        float cancelW = font(8.5F, true).width("Cancel") + 30;
-        float sendW = font(8.5F, true).width("Send") + 40;
+        /* In the player's own words: optional, always typing here. */
+        float textTop = by + 128.0F;
+        label.draw(zh ? "描述一下（選填）：做了什麼、看到什麼" : "Describe it (optional): what you did, what you saw",
+                bx + 18, textTop, DIM);
+        float fx = bx + 18;
+        float fy = textTop + 10.0F;
+        float fx2 = bx + w - 18;
+        float fy2 = fy + 62.0F;
+        hit("reportText", null, fx, fy, fx2, fy2);
+        Liquid.shadow(fx, fy, fx2, fy2, 10.0F, 6.0F, alpha(accent, 0.22F), 0.0F);
+        Liquid.rect(fx, fy, fx2, fy2, 10.0F, alpha(INK, 0.08F), ink(0x0B));
+        Liquid.rim(fx, fy, fx2, fy2, 10.0F, 1.0F, alpha(accent, 0.7F), ink(0x0A));
+        LiquidFont body = font(8.5F, false);
+        float caretX = fx + 9;
+        float caretY = fy + 10;
+        if (this.reportText.isEmpty()) {
+            body.draw(zh ? "例：用 Scaffold 搭橋時一直被 Grim Simulation 抓" : "e.g. Scaffold gets flagged by Grim Simulation when bridging",
+                    fx + 9, fy + 10, FAINT);
+        } else {
+            List<String> lines = wrapReport(body, this.reportText, fx2 - fx - 20, 4);
+            for (int i = 0; i < lines.size(); i++) {
+                float drawn = body.draw(lines.get(i), fx + 9, fy + 10 + i * 13.0F, TEXT);
+                caretX = fx + 9 + drawn;
+                caretY = fy + 10 + i * 13.0F;
+            }
+        }
+        if ((System.currentTimeMillis() / 500L) % 2L == 0L) {
+            Liquid.rect(caretX + 1, caretY - 4.5F, caretX + 2, caretY + 4.5F, 0.0F, accent);
+        }
+        font(7.0F, false).drawRight(this.reportText.length() + " / " + REPORT_TEXT_MAX, fx2, fy2 + 7.0F, FAINT);
+
+        LiquidFont small = font(7.5F, false);
+        small.drawCentred(zh ? "會上傳到 Discord #bug-reports：log 和設定檔（分成兩個檔案）"
+                        : "Uploads to Discord #bug-reports: the log and your config, as two files",
+                cx, fy2 + 18.0F, DIM);
+        small.drawCentred(zh ? "你的名字、其他玩家名字、token 和 IP 都會先移除"
+                        : "Your name, other players' names, tokens and IPs are removed",
+                cx, fy2 + 29.0F, alpha(0xFFFFC857, 0.95F));
+
+        float buttonsY = by + h - 20.0F;
+        String cancel = zh ? "取消" : "Cancel";
+        String send = zh ? "送出" : "Send";
+        float cancelW = font(8.5F, true).width(cancel) + 30;
+        float sendW = font(8.5F, true).width(send) + 40;
         float gap = 10.0F;
         float left = cx - (cancelW + gap + sendW) / 2.0F;
-        drawButton("reportCancel", null, left, buttonsY, cancelW, "Cancel", 1, mx, my);
-        drawButton("reportSend", null, left + cancelW + gap, buttonsY, sendW, "Send", 0, mx, my);
+        drawButton("reportCancel", null, left, buttonsY, cancelW, cancel, 1, mx, my);
+        drawButton("reportSend", null, left + cancelW + gap, buttonsY, sendW, send,
+                this.reportReason >= 0 ? 0 : 1, mx, my);
         if (mx >= bx && mx <= bx + w && my >= by && my <= by + h) {
-            this.hint = "Enter sends  ·  Esc cancels";
+            this.hint = this.reportReason < 0
+                    ? (zh ? "先選一個問題類型才能送出  ·  Esc 取消" : "Pick what went wrong to send  ·  Esc cancels")
+                    : (zh ? "Enter 送出  ·  Esc 取消  ·  Ctrl+V 貼上" : "Enter sends  ·  Esc cancels  ·  Ctrl+V pastes");
         }
     }
 
@@ -2688,7 +2797,15 @@ public class AtlasClickGui extends GuiScreen {
             return;
         }
         float content = Math.min(1.0F, (g - 0.6F) / 0.4F);
-        int current = this.dropdown.getValue();
+        /* Menu rows are the visible modes (ModeProperty.hide): the current
+           mode's row, not its index. */
+        int current = -1;
+        int[] visible = this.dropdown.visibleIndices();
+        for (int v = 0; v < visible.length; v++) {
+            if (visible[v] == this.dropdown.getValue()) {
+                current = v;
+            }
+        }
         int accent = accent();
         for (int i = 0; i < modes.length; i++) {
             float rowY = top + 4 + i * rowHeight;
@@ -2696,7 +2813,7 @@ public class AtlasClickGui extends GuiScreen {
             boolean hovered = mx >= left && mx <= right && my >= rowY && my <= rowY + rowHeight;
             hit("pick", Integer.valueOf(i), left, rowY, right, rowY + rowHeight);
             /* Colour choices show their colour. */
-            int swatch = this.theme.swatch(this.dropdown, i, clickGuiAccent());
+            int swatch = this.theme.swatch(this.dropdown, i < visible.length ? visible[i] : i, clickGuiAccent());
             if (swatch != 0) {
                 Liquid.dot(left + 12, cy, 3.5F, alpha(swatch, content));
                 Liquid.ring(left + 12, cy, 3.5F, 0.8F, alpha(ink(0x40), content));
@@ -2987,7 +3104,11 @@ public class AtlasClickGui extends GuiScreen {
         if (this.reportConfirm) {
             if (target != null && "reportSend".equals(target.kind)) {
                 sendReport();
-            } else if (target == null || !"reportDialog".equals(target.kind)) {
+            } else if (target != null && "reportReason".equals(target.kind)) {
+                this.reportReason = ((Integer) target.payload).intValue();
+            } else if (target != null && "reportCancel".equals(target.kind)) {
+                this.reportConfirm = false;
+            } else if (target == null || "reportOutside".equals(target.kind)) {
                 this.reportConfirm = false;
             }
             return;
@@ -3001,7 +3122,7 @@ public class AtlasClickGui extends GuiScreen {
             this.springs.remove("drop:" + open.getName());
             this.dropdown = null;
             if (target != null && "pick".equals(target.kind)) {
-                open.setValue(Integer.valueOf(((Integer) target.payload).intValue()));
+                open.setVisible(((Integer) target.payload).intValue());
                 pulse("edit:" + open.getName());
             }
             return;
@@ -3048,7 +3169,7 @@ public class AtlasClickGui extends GuiScreen {
         }
         if ("bugReport".equals(target.kind)) {
             pulse("btn:bugReport");
-            this.reportConfirm = true;
+            openReport();
             return;
         }
         if ("hudEditor".equals(target.kind)) {
@@ -3436,6 +3557,19 @@ public class AtlasClickGui extends GuiScreen {
                 sendReport();
             } else if (key == Keyboard.KEY_ESCAPE) {
                 this.reportConfirm = false;
+            } else if (key == Keyboard.KEY_BACK) {
+                if (!this.reportText.isEmpty()) {
+                    this.reportText = this.reportText.substring(0, this.reportText.length() - 1);
+                }
+            } else if (GuiScreen.isKeyComboCtrlV(key)) {
+                String paste = GuiScreen.getClipboardString();
+                if (paste != null) {
+                    paste = paste.replace("\r", "").replace('\t', ' ');
+                    this.reportText = (this.reportText + paste).substring(0,
+                            Math.min(REPORT_TEXT_MAX, this.reportText.length() + paste.length()));
+                }
+            } else if (typed >= 32 && typed != 127 && this.reportText.length() < REPORT_TEXT_MAX) {
+                this.reportText += typed;
             }
             return;
         }
