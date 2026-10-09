@@ -236,7 +236,8 @@ public final class ModuleDocs {
         d("MoreKB", "攻擊時重置衝刺，讓每一下打出更多擊退。");
         d("Criticals", "讓攻擊判定為爆擊（多 50% 傷害），以封包或小跳實現。");
         d("FastBow", "加快拉弓射箭的速度。");
-        d("BlockHit", "攻擊之間自動舉劍格擋（block hit），可依受傷時機、預測與節奏控制。");
+        d("BlockHit", "攻擊之間自動舉劍格擋（block hit）。Manual：照你的點擊，打完舉劍一下。Predict：在你快能再被打到之前舉劍、被打到就放下。Helper / Auto / Lag：其他方式。");
+        help("BlockHit", "ManualChance", "每次打中後舉劍一下的機率（每秒格擋次數 = CPS × 機率）。KillAura 自己有格擋時不作用。");
         d("ThrowAura", "自動把雪球、蛋等投擲物丟向敵人。");
         d("Displace", "攻擊瞬間轉向，把對手的擊退方向導向虛空或指定方向。");
         d("KeepSprint", "攻擊後不讓衝刺被打斷，保持移動速度。");
@@ -269,7 +270,11 @@ public final class ModuleDocs {
         d("TickBase", "操控 tick 時序，在進入攻擊範圍的瞬間先跑幾個 tick 搶先手。");
         d("TimerRange", "接近目標時短暫加速遊戲時鐘，搶先進入攻擊距離。");
         d("Velocity", "減少或改變自己吃到的擊退。");
-        d("Wtap", "打中後自動短暫放開前進鍵（W-tap）以重置衝刺。");
+        d("Wtap", "打中後真的放開 W 鍵再按回去（W-tap），由遊戲自己重置衝刺，下一下擊退更大。");
+        help("Wtap", "chance", "打中後有多少機率 W-tap。");
+        help("Wtap", "release-delay", "打中後幾毫秒放開 W（每次隨機 ±20%）。");
+        help("Wtap", "re-press-delay", "W 放開多久再按回去（毫秒，每次隨機 ±20%）。");
+        help("Wtap", "select-hits", "只在這一下打得出傷害時才 W-tap（對方大部分無敵時間已過）。");
         d("AutoGapple", "血量低於設定百分比時自動吃金蘋果。");
         d("AutoTool", "挖方塊時自動切到最適合的工具。");
         // ------------------------------------------------------------ PLAYER
@@ -435,7 +440,7 @@ public final class ModuleDocs {
                         "swing", "pre-aim", "counter-knockback", "counter-delay"),
                 h("轉頭", "mode", "move-fix", "speed", "max-speed", "rotation-random", "humanize", "ease",
                         "reset-angle", "snapback-speed", "snapback-delay", "snap-on-jump"),
-                h("物品", "auto-switch", "switch-back", "only-on-depletion", "pause-autoclicker"),
+                h("物品", "auto-switch", "switch-back", "item-spoof", "only-on-depletion", "pause-autoclicker"),
                 h("其他", "disable-after", "log"));
         g("Scaffold",
                 h("常用", "rotations", "sprint", "tower", "keep-y", "safe-walk", "move-fix", "turn-speed"),
@@ -497,8 +502,9 @@ public final class ModuleDocs {
                 h("自動格擋", "AutoBlockTime", "AutoMode", "AutoBlockRange", "HoldTick", "BlockDelay", "BlockTick",
                         "DelayPacketTick"),
                 h("受傷時機", "MinHurtTime", "MaxHurtTime"),
-                h("預測", "Predict*"),
-                h("節奏", "Rhythm*"));
+                h("Manual", "ManualChance"),
+                h("Predict", "Rhythm*"),
+                h("Swing（舊）", "Predict*"));
         g("TargetHUD",
                 h("樣式", "style", "Anim Mode", "animations", "head", "indicator", "outline", "shadow"),
                 h("顏色", "color", "CustomColor", "Bg-Alpha", "background"),
@@ -629,8 +635,8 @@ public final class ModuleDocs {
         help(ka, "RequirePress", "只有按住左鍵時才攻擊。");
         help(ka, "AllowMining", "準心對著方塊且按住左鍵時，讓你挖方塊而不是打人。");
         help(ka, "InventoryCheck", "開著背包、箱子等畫面時不攻擊。");
-        help(ka, "auto-block", "自動格擋方式。LEGIT：打一下舉劍、下個 tick 放下，最像真人 block hit。SameTick：要點的那 tick 先放下、打、立刻再舉，其餘時間舉著；離開揮手距離就放下。");
-        help(ka, "AutoBlockCPS", "格擋時的攻擊速度。");
+        help(ka, "auto-block", "自動格擋方式。LEGIT：只在對方面向你、正在揮劍（或你剛被打）時才 block hit——打完立刻舉劍、下一下之前放下，不降 CPS；對方沒威脅就不格擋，跑得快。SameTick：要點的那 tick 先放下、打、立刻再舉，其餘時間舉著；離開揮手距離就放下。");
+        help(ka, "AutoBlockCPS", "格擋時的攻擊速度（LEGIT、SameTick 不用，照 MinCPS～MaxCPS）。");
         help(ka, "AutoBlockRange", "目標在這個距離內就舉劍格擋。");
         help(ka, "AutoBlockRequirePress", "只有按住右鍵時才自動格擋。");
         help(ka, "AttackTick", "SWAP 格擋時，NoSlow 的 No Attack 在哪個 tick 不出手。");

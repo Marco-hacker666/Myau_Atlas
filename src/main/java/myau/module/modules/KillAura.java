@@ -297,7 +297,8 @@ public class KillAura extends Module {
                    in the code for old configs. */
                 .hide("VANILLA", "SPOOF", "BLINK", "INTERACT", "SWAP", "FAKE", "Morden")
                 .alias("LiquidBounce", "SameTick");
-        this.autoBlockCPS = new FloatProperty("AutoBlockCPS", 8.0F, 1.0F, 10.0F);
+        this.autoBlockCPS = new FloatProperty("AutoBlockCPS", 8.0F, 1.0F, 10.0F,
+                () -> this.autoBlock.getValue() != 7 && this.autoBlock.getValue() != 10);
         this.autoBlockRequirePress = new BooleanProperty("AutoBlockRequirePress", false);
         this.autoBlockRange = new FloatProperty("AutoBlockRange", 6.0F, 3.0F, 8.0F);
         this.swingRange = new FloatProperty("SwingRange", 3.5F, 3.0F, 6.0F);
@@ -481,7 +482,11 @@ public class KillAura extends Module {
     }
 
     private long getAttackDelay() {
-        if (this.isBlocking) {
+        /* 2026-10-09: LEGIT and SameTick keep the clicker's pace; the block
+           fits between clicks. AutoBlockCPS (8 for the owner) used to cap
+           them whenever a target was in reach. */
+        int blockMode = this.autoBlock.getValue();
+        if (this.isBlocking && blockMode != 7 && blockMode != 10) {
             return (long) (1000.0F / this.autoBlockCPS.getValue());
         } else {
             if (this.cpsMode.getValue() == 2) {
@@ -606,6 +611,27 @@ public class KillAura extends Module {
         Vec3 nextEyes = eyes.addVector(mc.thePlayer.posX - mc.thePlayer.lastTickPosX,
                 mc.thePlayer.posY - mc.thePlayer.lastTickPosY, mc.thePlayer.posZ - mc.thePlayer.lastTickPosZ);
         return distanceTo(nextBox, nextEyes) > range;
+    }
+
+    /**
+     * LEGIT autoblock (2026-10-09): can the target hit us now? We were just
+     * hit, or it is facing us (within 60 degrees) and swinging, within 3.6.
+     */
+    private boolean legitBlockThreat() {
+        if (this.target == null) {
+            return false;
+        }
+        if (mc.thePlayer.hurtTime > 0) {
+            return true;
+        }
+        EntityLivingBase entity = this.target.getEntity();
+        if (mc.thePlayer.getDistanceToEntity(entity) > 3.6F || !entity.isSwingInProgress) {
+            return false;
+        }
+        double dx = mc.thePlayer.posX - entity.posX;
+        double dz = mc.thePlayer.posZ - entity.posZ;
+        float toUs = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
+        return Math.abs(MathHelper.wrapAngleTo180_float(toUs - entity.rotationYawHead)) < 60.0F;
     }
 
     private static double distanceTo(AxisAlignedBB box, Vec3 point) {
@@ -1279,31 +1305,33 @@ public class KillAura extends Module {
                                    anyone within AutoBlockRange (6 for the user), so
                                    chasing a target 4-6 blocks off was done blocking,
                                    at blocking speed ("一直 block，速度很慢"). */
+                                /* 2026-10-09 rework: block only when it helps.
+                                   The sword goes up right after a hit (same tick,
+                                   after the attack, as a real block hit) only while
+                                   the target can hit back -- facing us and
+                                   swinging, or we were just hit. It comes down the
+                                   tick before the next click, so every click lands
+                                   unblocked (a release and a hit never share a
+                                   tick); a click that comes due while still
+                                   blocking waits one tick, it is not lost. No
+                                   threat: no blocking at all, full speed. */
                                 if (this.hasValidTarget() && this.target != null
                                         && this.isBoxInSwingRange(this.target.getBox())) {
+                                    boolean threat = this.legitBlockThreat();
                                     if (!Myau.playerStateManager.digging && !Myau.playerStateManager.placing) {
-                                        switch (this.blockTick) {
-                                            case 0:
-                                                if (!this.isPlayerBlocking()) {
-                                                    swap = true;
-                                                }
-                                                this.blockTick = 1;
-                                                break;
-                                            case 1:
-                                                if (this.isPlayerBlocking()) {
-                                                    this.stopBlock();
+                                        if (this.isPlayerBlocking()) {
+                                            if (!threat || this.attackDelayMS <= 50L) {
+                                                this.stopBlock();
+                                                if (this.attackDelayMS <= 0L) {
                                                     attack = false;
                                                 }
-                                                if (this.attackDelayMS <= 50L) {
-                                                    this.blockTick = 0;
-                                                }
-                                                break;
-                                            default:
-                                                this.blockTick = 0;
+                                            }
+                                        } else if (threat && this.attackDelayMS <= 0L) {
+                                            swap = true;
                                         }
                                     }
                                     Myau.blinkManager.setBlinkState(false, BlinkModules.AUTO_BLOCK);
-                                    this.isBlocking = true;
+                                    this.isBlocking = threat;
                                     this.fakeBlockState = false;
                                 } else {
                                     if (this.isPlayerBlocking() && !Myau.playerStateManager.digging

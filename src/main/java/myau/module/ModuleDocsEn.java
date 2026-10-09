@@ -50,7 +50,8 @@ final class ModuleDocsEn {
         d("MoreKB", "Resets sprint on attack so each hit deals more knockback.");
         d("Criticals", "Makes attacks critical hits (+50% damage) by packets or small hops.");
         d("FastBow", "Draws and shoots the bow faster.");
-        d("BlockHit", "Blocks with the sword between hits, timed by hurt time, prediction or rhythm.");
+        help("BlockHit", "ManualChance", "Chance that a hit is followed by a one-tick block (blocks per second = CPS x chance). Idle while KillAura blocks by itself.");
+        d("BlockHit", "Blocks with the sword between hits. Manual: after your hits, one-tick block. Predict: raised just before you can be hit again, lowered when you are. Helper / Auto / Lag: other ways.");
         d("ThrowAura", "Throws snowballs and eggs at enemies.");
         d("Displace", "Turns at the moment of a hit to aim the target's knockback at the void or a chosen direction.");
         d("KeepSprint", "Keeps sprinting after an attack instead of slowing down.");
@@ -83,7 +84,11 @@ final class ModuleDocsEn {
         d("TickBase", "Runs a few ticks ahead the moment a target comes into range, then repays them, to strike first.");
         d("TimerRange", "Briefly speeds up the game clock when approaching a target, to reach attack range first.");
         d("Velocity", "Reduces or changes the knockback you take.");
-        d("Wtap", "Briefly releases forward after a hit (W-tap) to reset sprint.");
+        d("Wtap", "After a hit, really lets go of W and presses it again (W-tap): the game resets the sprint, the next hit knocks back more.");
+        help("Wtap", "chance", "How often a hit is followed by a W-tap.");
+        help("Wtap", "release-delay", "Milliseconds from the hit to letting go of W (each varies +-20%).");
+        help("Wtap", "re-press-delay", "How long W stays up, in milliseconds (each varies +-20%).");
+        help("Wtap", "select-hits", "Only after hits that can deal damage (the target is past most of its hurt time).");
         d("AutoGapple", "Eats a golden apple when health falls below a percentage.");
         d("AutoTool", "Switches to the best tool for the block being mined.");
         // ------------------------------------------------------------ PLAYER
@@ -227,6 +232,7 @@ final class ModuleDocsEn {
         // ========================================================== HEADINGS
         heading("一般", "General");
         heading("常用", "Main");
+        heading("Swing（舊）", "Swing (old)");
         heading("目標", "Targets");
         heading("出手", "Attacking");
         heading("格擋", "Blocking");
@@ -386,8 +392,8 @@ final class ModuleDocsEn {
         help(ka, "RequirePress", "Only attack while the attack key is held.");
         help(ka, "AllowMining", "With the crosshair on a block and the attack key held, mine instead of attacking.");
         help(ka, "InventoryCheck", "No attacks while an inventory or chest screen is open.");
-        help(ka, "auto-block", "How it blocks. LEGIT: hit and raise the sword, lower it next tick, like a real block hit. SameTick: on a click tick lower, hit and raise again at once; blocking between clicks; lowered out of swing range.");
-        help(ka, "AutoBlockCPS", "Attack speed while blocking.");
+        help(ka, "auto-block", "How it blocks. LEGIT: block hits only while the target can hit back (facing you and swinging, or you were just hit): raised right after a hit, lowered before the next, CPS unchanged; no threat, no blocking, full speed. SameTick: on a click tick lower, hit and raise again at once; blocking between clicks; lowered out of swing range.");
+        help(ka, "AutoBlockCPS", "Attack speed while blocking (not used by LEGIT and SameTick, which keep MinCPS-MaxCPS).");
         help(ka, "AutoBlockRange", "Raise the sword when the target is within this distance.");
         help(ka, "AutoBlockRequirePress", "Only block while the use key is held.");
         help(ka, "AttackTick", "With SWAP blocking: the tick on which NoSlow's No Attack holds the hit.");

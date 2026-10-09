@@ -56,6 +56,12 @@ public abstract class MixinEntityRenderer {
                     this.mc.thePlayer.inventory.currentItem = slot;
                 }
             }
+            myau.module.modules.Clutch clutch = (myau.module.modules.Clutch) Myau.moduleManager.modules.get(myau.module.modules.Clutch.class);
+            int clutchSlot = clutch == null ? -1 : clutch.getSpoofSlot();
+            if (clutchSlot >= 0 && this.slot == null) {
+                this.slot = new Box<>(this.mc.thePlayer.inventory.currentItem);
+                this.mc.thePlayer.inventory.currentItem = clutchSlot;
+            }
             KillAura killAura = (KillAura) Myau.moduleManager.modules.get(KillAura.class);
             if (killAura.isEnabled() && killAura.isBlocking()) {
                 this.using = new Box<>(((IAccessorEntityPlayer) this.mc.thePlayer).getItemInUse());
@@ -106,6 +112,12 @@ public abstract class MixinEntityRenderer {
                 this.slot = new Box<>(this.mc.thePlayer.inventory.currentItem);
                 this.mc.thePlayer.inventory.currentItem = slot;
             }
+        }
+        myau.module.modules.Clutch clutch = (myau.module.modules.Clutch) Myau.moduleManager.modules.get(myau.module.modules.Clutch.class);
+        int clutchSlot = clutch == null ? -1 : clutch.getSpoofSlot();
+        if (clutchSlot >= 0 && this.slot == null) {
+            this.slot = new Box<>(this.mc.thePlayer.inventory.currentItem);
+            this.mc.thePlayer.inventory.currentItem = clutchSlot;
         }
     }
 

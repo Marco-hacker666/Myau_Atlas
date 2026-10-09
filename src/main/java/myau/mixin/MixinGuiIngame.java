@@ -59,6 +59,11 @@ public abstract class MixinGuiIngame {
                 return inventoryPlayer.getStackInSlot(slot);
             }
         }
+        myau.module.modules.Clutch clutch = (myau.module.modules.Clutch) Myau.moduleManager.modules.get(myau.module.modules.Clutch.class);
+        int clutchSlot = clutch == null ? -1 : clutch.getSpoofSlot();
+        if (clutchSlot >= 0) {
+            return inventoryPlayer.getStackInSlot(clutchSlot);
+        }
         return inventoryPlayer.getCurrentItem();
     }
 }

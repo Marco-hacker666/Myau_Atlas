@@ -342,6 +342,10 @@ public class Clutch extends Module {
 
     public final BooleanProperty autoSwitch = new BooleanProperty("auto-switch", true);
     public final BooleanProperty switchBack = new BooleanProperty("switch-back", true);
+    /* 2026-10-09: as Scaffold's / AutoBlockIn's item-spoof -- the slot really
+       changes (the server sees it), only the hand and the hotbar keep showing
+       what was held before the catch. Drawing only: placement is untouched. */
+    public final BooleanProperty itemSpoof = new BooleanProperty("item-spoof", true, this.autoSwitch::getValue);
     /* Switch only when the blocks in hand run out mid-catch; holding
        something else when the catch starts, use nothing. */
     public final BooleanProperty onDepletion = new BooleanProperty("only-on-depletion", false,
@@ -406,6 +410,13 @@ public class Clutch extends Module {
     private boolean startedWithBlocks;
     private int previousSlot = -1;
     private boolean slotSwapped;
+    /** The slot held before this catch switched, shown while item-spoof is on; -1 when none. */
+    private int shownSlot = -1;
+
+    /** For the render mixins: the slot to draw instead of the real one, or -1. */
+    public int getSpoofSlot() {
+        return this.isEnabled() && this.itemSpoof.getValue() && this.slotSwapped ? this.shownSlot : -1;
+    }
     private boolean clickerPaused;
 
     /* One attempt: from the moment a catch is wanted until the player is on
@@ -1131,6 +1142,9 @@ public class Clutch extends Module {
         if (this.previousSlot < 0 && this.switchBack.getValue()) {
             this.previousSlot = mc.thePlayer.inventory.currentItem;
         }
+        if (!this.slotSwapped) {
+            this.shownSlot = mc.thePlayer.inventory.currentItem;
+        }
         mc.thePlayer.inventory.currentItem = slot;
         this.slotSwapped = true;
     }
@@ -1151,6 +1165,7 @@ public class Clutch extends Module {
         }
         this.slotSwapped = false;
         this.previousSlot = -1;
+        this.shownSlot = -1;
         if (this.clickerPaused) {
             Module clicker = Myau.moduleManager.getModule(AutoClicker.class);
             if (clicker != null) {

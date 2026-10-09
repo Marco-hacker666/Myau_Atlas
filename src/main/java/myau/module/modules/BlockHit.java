@@ -17,8 +17,22 @@ import myau.util.TimerUtil;
 public class BlockHit extends Module {
 
     private static final Minecraft mc = Minecraft.getMinecraft();
+    /* 2026-10-09 (Vape 4.21's BlockHit modes): "Rhythm" is shown as Predict
+       -- it is the port of Vape's Predict -- and the old swing-watching
+       Predict, decorative at high ping by its own note, is hidden as "Swing".
+       Manual is new. Indices are unchanged (3 = swing, 4 = rhythm). */
     private final ModeProperty mode = new ModeProperty("Mode", 0,
-            new String[]{"Helper", "Auto", "Lag", "Predict", "Rhythm"});
+            new String[]{"Helper", "Auto", "Lag", "Swing", "Predict", "Manual"})
+            .hide("Swing")
+            .alias("Rhythm", "Predict");
+    /* ---- Manual (Vape's Manual) ------------------------------------------
+       Block hits paced by this player's own clicks: after a hit with a sword,
+       ManualChance of the time the use key goes down for one tick (Vape: 50
+       ms), as a player tapping right click after left click. Blocks per
+       second = CPS x chance. Does nothing while KillAura blocks by itself. */
+    private final PercentProperty manualChance = new PercentProperty("ManualChance", 80,
+            () -> this.mode.getValue() == 5);
+    private int manualTicks;
     private final IntProperty stopTime = new IntProperty("StopTicks", 2, 1, 5, () -> this.mode.getValue() == 0);
     private final ModeProperty autoBlockTime = new ModeProperty("AutoBlockTime", 0, new String[]{"Delay", "HurtTime", "Sag"}, () -> this.mode.getValue() == 1);
     private final ModeProperty autoMode = new ModeProperty("AutoMode", 0, new String[]{"Spam", "Hold"}, () -> this.mode.getValue() == 1 && this.autoBlockTime.getValue() == 0);
@@ -138,6 +152,10 @@ public class BlockHit extends Module {
     @Override
     public void onDisabled() {
         Myau.lagManager.setDelay(0);
+        if (this.manualTicks > 0) {
+            this.manualTicks = 0;
+            KeyBindUtil.updateKeyState(mc.gameSettings.keyBindUseItem.getKeyCode());
+        }
         /* Switched off mid-block would otherwise leave the use key held down
            by this module with nothing left to release it. */
         stopPredict();
@@ -265,6 +283,10 @@ public class BlockHit extends Module {
 
             if (this.mode.getValue() == 3) {
                 predict();
+            }
+            if (this.manualTicks > 0 && --this.manualTicks == 0) {
+                /* Back to whatever the player is really holding. */
+                KeyBindUtil.updateKeyState(mc.gameSettings.keyBindUseItem.getKeyCode());
             }
             if (this.mode.getValue() == 4) {
                 rhythm();
@@ -479,6 +501,21 @@ public class BlockHit extends Module {
                 wanted - player.rotationYaw));
     }
 
+    private void manualBlock() {
+        if (this.manualTicks > 0 || mc.thePlayer.isUsingItem() || mc.currentScreen != null) {
+            return;
+        }
+        KillAura aura = (KillAura) Myau.moduleManager.modules.get(KillAura.class);
+        if (aura != null && aura.isEnabled() && aura.autoBlock.getValue() != 0) {
+            return;
+        }
+        if (Math.random() * 100.0 >= this.manualChance.getValue()) {
+            return;
+        }
+        KeyBindUtil.setKeyBindState(mc.gameSettings.keyBindUseItem.getKeyCode(), true);
+        this.manualTicks = 1;
+    }
+
     private void reset() {
         attacking = false;
         KeyBindUtil.updateKeyState(mc.gameSettings.keyBindUseItem.getKeyCode());
@@ -494,6 +531,9 @@ public class BlockHit extends Module {
             attacking = true;
             attackTicks = 0;
             target = (EntityLivingBase) event.getTarget();
+            if (this.mode.getValue() == 5) {
+                manualBlock();
+            }
         }
     }
 

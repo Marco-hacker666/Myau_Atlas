@@ -69,6 +69,15 @@ public class NoItemRelease extends Module {
 
     /** A vanilla release was dropped and the server still has the item in use. */
     private static boolean withheld;
+    /*
+     * 2026-10-09: ticks until the server finishes the food or potion by itself
+     * (the use count when the release was dropped, plus a margin); -1 for a
+     * use that never ends on its own (a sword). After that the server is not
+     * using anything any more, and a release sent then would be a stray
+     * packet for an item no longer in use.
+     */
+    private static int withheldTicks = -1;
+    private static int pendingTicks = -1;
 
     public NoItemRelease() {
         super(NAME, false);
@@ -87,6 +96,11 @@ public class NoItemRelease extends Module {
         }
         ItemStack using = ((IAccessorEntityPlayer) mc.thePlayer).getItemInUse();
         inVanillaRelease = using != null && self.covers(using);
+        if (inVanillaRelease) {
+            EnumAction action = using.getItemUseAction();
+            pendingTicks = action == EnumAction.EAT || action == EnumAction.DRINK
+                    ? ((IAccessorEntityPlayer) mc.thePlayer).getItemInUseCount() + 3 : -1;
+        }
     }
 
     /** Called by MixinPlayerControllerMP when onStoppedUsingItem returns. */
@@ -122,6 +136,7 @@ public class NoItemRelease extends Module {
         }
         claimed = null;
         withheld = true;
+        withheldTicks = pendingTicks;
         /* What EventManager.noteCancel recorded when this module cancelled the
            event itself: the attribution a correction is weighed against. */
         ActionLedger.note(NAME, ActionLedger.holdKind(packet, true));
@@ -172,6 +187,10 @@ public class NoItemRelease extends Module {
     public void onTick(TickEvent event) {
         inVanillaRelease = false;
         claimed = null;
+        if (withheld && event.getType() == EventType.PRE && withheldTicks >= 0 && --withheldTicks < 0) {
+            /* The server has finished it by now: nothing left to release. */
+            withheld = false;
+        }
         if (mc.thePlayer == null) {
             /* Out of the world: nothing is in use any more. */
             withheld = false;

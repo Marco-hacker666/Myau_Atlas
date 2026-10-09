@@ -4158,3 +4158,100 @@ build.gradle.kts, Myau.java). The version follows the Myau Atlas release numberi
 `build/libs/Myau+.jar-1.5.0.jar`. Built, md5 eb36ba58976c22cdf09a9be3b443d523, **installed** (game closed,
 gated), 62 mixins; includes the "Main" heading fix. Backups: `backups/src/*.pre-version-20261008`,
 `backups/jars/Myau+UI_fixed.jar.pre-version-20261008`.
+
+## 2026-10-09 — Owner's KillAura settings: recommended balanced preset written to config
+At the owner's request, `config/Myau/default.json` KillAura (game closed; backup
+`backups/config/default.json.pre-ka-preset-20261009`): MinCPS 11→10, MaxCPS 16→14, auto-block LEGIT→NONE (LEGIT
+held block too long and slowed movement; W-tap instead), FOV 189→180, ScanExtra 2.5→1.5, MaxTurnSpeed 70→60,
+AimDrift 0.5→0.4, AimLead 0.2→0.3 (220 ms ping). Everything else as before (Legit / Human / SMOOTHSTEP / Multipoint /
+Lazy / ShortStop / Raycast Enemy / ExitClick). If Polar still flags: MaxCPS 12, then MaxTurnSpeed 50.
+
+## 2026-10-09 — LEGIT autoblock rework: block only under threat, no CPS cap
+Owner: "auto block 沒做好". Found in KillAura:
+1. `getAttackDelay` used `AutoBlockCPS` (owner: 8) whenever `isBlocking`, and LEGIT set `isBlocking` for any target
+   in SwingRange -- so in reach the aura dropped from MinCPS-MaxCPS to 8 CPS.
+2. LEGIT blocked on every hit whatever the target was doing, so chasing or a fleeing target meant block slowdown.
+3. The release tick set `attack = false` in a fixed 2-tick cycle regardless of when the click was due.
+
+Now (case 7): `legitBlockThreat()` = we were just hit (hurtTime > 0), or the target is within 3.6, swinging
+(`isSwingInProgress`) and facing us (head yaw within 60 degrees). Not blocking + threat + click due: hit, then block
+in the same tick after it (`swap`, finishAttack's interact + use). Blocking: release when there is no threat any
+more or the next click is due within a tick (attackDelayMS <= 50); if the click is already due, release and hold
+the click one tick (not consumed: performAttack is not called). So every hit lands unblocked and never shares a tick
+with a release. `isBlocking = threat`. `getAttackDelay` ignores AutoBlockCPS for LEGIT (7) and SameTick (10);
+AutoBlockCPS is hidden for those. Help texts updated.
+Built (271 tests), md5 a9a35bd248dbd9490f2dd1327406b194; **not installed** (game running). After install the owner's
+auto-block should go back to LEGIT (set NONE on 2026-10-09 in the preset). Backups:
+`backups/src/pre-legitblock-20261009`, `backups/src/legitblock-20261009`.
+
+## 2026-10-09 — NoItemRelease review; server-finish expiry; installed with the LEGIT autoblock rework
+Owner: Slinky's NoItemRelease (same logic as ours with safe-release off) is not flagged on **Polar**; our 133 NoSlow
+flags were **Grim** on test.ccbluex.net. Plan B: safe-release off, test on a Polar server with NoSlow off, then on,
+and read FlagDetector. Slinky is a Myau fork (its file uses our `myau.util.ActionLedger`); its own NoSlow may differ.
+Review of our path (claim/drop window, module-sent releases passing, Blink/Lag order, KillAura `onCancelUse` cancels
+the stop only while `isBlocking`, reset on disable) found no flaw. One fix: after a dropped release of food/potion the
+server finishes the item by itself after the remaining use count; `withheld` stayed true, so a later release (module
+off, or safe-release on movement) went out for an item no longer in use. Now `withheldTicks` = use count + 3 at the
+drop (-1 for a sword: never ends), counted down on PRE ticks, clearing `withheld`.
+Built 271 tests, md5 c176475f500c4500edd6d433bf4390a1, **installed** (game closed, gated), 62 mixins. Config
+(backup `backups/config/default.json.pre-legit-nir-20261009`): KillAura auto-block NONE→LEGIT, NoItemRelease
+safe-release true→false (module itself still off; mode CONSUMABLE).
+
+## 2026-10-09 — Clutch item-spoof
+Owner asked for Clutch to work with item spoof. Here "item-spoof" is drawing only (as Scaffold / AutoBlockIn): the
+slot really changes and the server sees the C09; the hand, the hotbar highlight and the item name keep showing the
+slot held before. Clutch: `item-spoof` (BooleanProperty, default true, shown with auto-switch), `shownSlot` recorded
+on the first switch of a catch in `selectSlot`, cleared in `stopPlacing`; `getSpoofSlot()` returns it while
+enabled + item-spoof + slotSwapped. Mixins: MixinEntityRenderer (updateCameraAndRender, updateRenderer -- only if no
+other module already swapped the drawn slot this frame) and MixinGuiIngame.updateTick. **Placement code and timing
+untouched** (known-good Clutch of 2026-10-02). Group "物品" lists item-spoof; generic help text already existed.
+Built 271 tests, md5 e204e1055d81c49c383171fddc7c2b08, installed (game closed, gated), 62 mixins. Backups:
+`backups/src/pre-clutch-spoof-20261009`, `backups/src/clutch-spoof-20261009`.
+
+## 2026-10-09 — Vape V4 comparison; WTap rewritten after Vape's
+Owner felt the modules are below Vape V4. Studied the behaviour of Vape 4.21's NoItemRelease, NoSlowdown, WTap,
+BlockHit, Velocity, LeftClicker/ClickerMod, JumpReset, HitSelect, BlockIn, Clutch and its `module/control` claims.
+Findings: (1) Vape acts through keys and the mouse (KeyBinding states, mouse-count turns) so the game sends vanilla
+packets; we often send or edit packets. (2) Vape has one owner per control (rotation, primary/secondary action,
+right-click use, mouse-over) with priorities (`ModuleControlClaim`); we fix conflicts case by case. (3) Vape modules
+have 3-10 settings and item allow-lists. Vape's NoItemRelease only cancels the release for allowed items (swords,
+food, potions) and always while a GUI is open -- no anti-flag logic at all. Plan agreed: 1 WTap, 2 NoItemRelease
+allow-list + GUI, 3 AutoClicker randomisation, 4 control claims, 5 keys/mouse instead of packets.
+
+**WTap** (`modules/Wtap.java`, module "WTap") rewritten: on our C02 ATTACK while sprinting and physically holding W,
+with `chance` (90%), only if `select-hits` passes (target `hurtResistantTime <= 14`, Vape's value), after
+`release-delay` ms (0) really set the forward KeyBinding up, and after `re-press-delay` ms (50) put it back to the
+physical key state (Keyboard / Mouse), each delay varied +-20%. Restored on a GUI opening and on disable; no new tap
+while one is pending. Old version zeroed movementInput on every hit (500 ms cooldown) with a fixed 5.5 / 1.5 tick
+rhythm and also on hits inside the hurt time. Old settings delay / duration are gone (owner's config had 2.5 / 1.0).
+Old file was overwritten before backing up -- recovered from the release repo (unchanged since the first public
+commit) into `backups/src/pre-wtap-20261009`. Built 271 tests, md5 b92279f3e6e99cf602301cbf2b04e5ff, installed, 62
+mixins. Backup after: `backups/src/wtap-20261009`.
+
+## 2026-10-09 — BlockHit after Vape 4.21's: Manual mode, Rhythm shown as Predict, swing Predict hidden
+Owner chose BlockHit next (skipping the NoItemRelease item). Vape's BlockHit (as observed): modes
+Manual (on each physical left click, with Chance 70-90%, press the use KeyBinding for 50 ms; idle while its
+LeftClicker / SilentAura run their own), Predict (block when the player's own hurtResistantTime <= 10 + early window
+[max hurt time ms + ping + 50]; release on damage; after 3 steady 250-1500 ms damage intervals, block from just
+before the predicted next hit to HoldAfter ticks later), Auto (legacy), Lag; plus Require mouse down, Angle 90,
+Distance 5. Ours already blocks through the use KeyBinding, and our "Rhythm" (2026-09-25) is that Predict.
+Changes: Mode list {"Helper","Auto","Lag","Swing","Predict","Manual"} -- indices unchanged; old swing-watching
+Predict (3) renamed "Swing" and hidden (its own note: decorative at high ping); "Rhythm" (4) is shown as "Predict"
+(`alias("Rhythm","Predict")`; an old config's "Predict" now loads as the rhythm one); new **Manual** (5):
+`ManualChance` (80%); on our AttackEvent with a sword (not using an item, no GUI, and not while KillAura's own
+auto-block is on) the use key is set down for one tick, then `updateKeyState` returns it to the physical state.
+Docs: descriptions and help, groups Manual / Predict / Swing（舊） (English heading "Swing (old)").
+Built 271 tests, md5 b9fd029fa8dbd05a03cabedb545212a5, installed, 62 mixins. Owner's BlockHit mode is Helper
+(unchanged). Backups: `backups/src/pre-blockhit-20261009`, `backups/src/blockhit-20261009`.
+
+## 2026-10-09 — BlockHit full Vape parity: report only (no code yet)
+Owner asked "is it exactly like Vape?" -- no: Manual triggers on hits not mouse presses, fixed chance, 1-tick release;
+Predict uses half ping and a RhythmMax cap; no Require mouse down / Ignore manual block / Angle / Distance; Auto and Lag
+work differently. Owner: do it completely, then "write the report first, don't build yet". Report (Chinese, with the
+open decisions -- keep Helper?, Require mouse down default on?, drop RhythmMax?, Lag's packet hold):
+a private report (not in this repository). Vape also tracks attack-to-hurt latency like our HitTimer.
+Nothing changed in the code for this step.
+Decisions recorded in the report (2026-10-09): keep Helper as a fifth mode; Require mouse down default **off**;
+Predict without the RhythmMax cap (Vape's Hold after + release on damage instead); Lag done Vape's way (hold the
+release and everything after it 50-100 ms). Owner then said "not now": only a pre-change backup was taken
+(`backups/src/pre-blockhit-vape-20261009`); no code changed.
