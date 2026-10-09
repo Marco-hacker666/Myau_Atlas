@@ -155,6 +155,23 @@ public class Myau {
         moduleManager.modules.put(SmartBlinker.class, new SmartBlinker());
         moduleManager.modules.put(LeapModeHUD.class, new LeapModeHUD());
         moduleManager.modules.put(BridgeAssist.class, new BridgeAssist());
+        moduleManager.modules.put(Spider.class, new Spider());
+        moduleManager.modules.put(PearlSaver.class, new PearlSaver());
+        moduleManager.modules.put(ProjectileAimBot.class, new ProjectileAimBot());
+        moduleManager.modules.put(SmartClicking.class, new SmartClicking());
+        moduleManager.modules.put(DelayRemover.class, new DelayRemover());
+        moduleManager.modules.put(ForwardTrack.class, new ForwardTrack());
+        moduleManager.modules.put(AutoArmor.class, new AutoArmor());
+        moduleManager.modules.put(BedWars.class, new BedWars());
+        moduleManager.modules.put(SpeedBuilders.class, new SpeedBuilders());
+        moduleManager.modules.put(BedDefender.class, new BedDefender());
+        moduleManager.modules.put(AutoBed.class, new AutoBed());
+        moduleManager.modules.put(AutoPlay.class, new AutoPlay());
+        moduleManager.modules.put(BlocksESP.class, new BlocksESP());
+        moduleManager.modules.put(MobESP.class, new MobESP());
+        moduleManager.modules.put(AutoBlock.class, new AutoBlock());
+        /* The script runtime drives scripts through one module (Batch 6). */
+        moduleManager.modules.put(ScriptModule.class, new ScriptModule());
         moduleManager.modules.put(AutoTool.class, new AutoTool());
         moduleManager.modules.put(AutoSwap.class, new AutoSwap());
         moduleManager.modules.put(BedNuker.class, new BedNuker());
@@ -337,6 +354,12 @@ public class Myau {
         commandManager.commands.add(new TargetCommand());
         commandManager.commands.add(new ToggleCommand());
         commandManager.commands.add(new VclipCommand());
+        /* Online config sharing and the script runtime (Batches 5 and 6). */
+        commandManager.commands.add(new OnlineConfigCommand());
+        commandManager.commands.add(new myau.command.commands.UserConfigCommand());
+        commandManager.commands.add(new myau.command.commands.SetupCommand());
+        commandManager.commands.add(new myau.command.commands.AltsCommand());
+        commandManager.commands.add(new myau.command.commands.ScriptCommand());
         for (Module module : moduleManager.modules.values()) {
             ArrayList<Property<?>> properties = new ArrayList<>();
             /* The Theme groups keep their settings in ThemeStyle, so for them
