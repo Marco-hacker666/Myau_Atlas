@@ -349,6 +349,14 @@ public class Myau {
         } catch (Exception e) {
             version = "dev";
         }
+        /* Setup: keep OneConfig's GUI key off RightShift, which is our ClickGUI key,
+           and re-check it whenever a world loads. */
+        try {
+            java.io.File gameDir = net.minecraft.client.Minecraft.getMinecraft().mcDataDir;
+            myau.setup.OneConfigPatcher.run(gameDir);
+            myau.setup.OneConfigPatcher.watch(gameDir);
+        } catch (Throwable ignored) {
+        }
         updateDisplayTitle();
 
     }

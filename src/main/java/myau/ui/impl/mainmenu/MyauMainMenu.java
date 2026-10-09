@@ -105,6 +105,7 @@ public class MyauMainMenu extends GuiScreen implements GuiYesNoCallback
     public void initGui()
     {
         this.viewportTexture = new DynamicTexture(256, 256);
+        myau.setup.SetupHook.onMainMenu(this);
         Calendar calendar = Calendar.getInstance();
         calendar.setTime(new Date());
 
@@ -122,7 +123,8 @@ public class MyauMainMenu extends GuiScreen implements GuiYesNoCallback
 
         this.buttonList.add(new myau.util.shader.impl.GuiButton(0, this.width / 2 - 100, j + 72 + 12, 98, 20, I18n.format("menu.options", new Object[0])));
         this.buttonList.add(new myau.util.shader.impl.GuiButton(4, this.width / 2 + 2, j + 72 + 12, 98, 20, I18n.format("menu.quit", new Object[0])));
-        this.buttonList.add(new ModernGuiButton(15, this.width / 2 - 100, j + 72 + 36, 200, 20, "Background"));
+        this.buttonList.add(new ModernGuiButton(15, this.width / 2 - 100, j + 72 + 36, 98, 20, "Background"));
+        this.buttonList.add(new ModernGuiButton(16, this.width / 2 + 2, j + 72 + 36, 98, 20, "Setup"));
 
         BackgroundRenderer.init();
 
@@ -205,6 +207,11 @@ public class MyauMainMenu extends GuiScreen implements GuiYesNoCallback
         if (button.id == 14)
         {
             this.mc.displayGuiScreen(new me.ksyz.accountmanager.gui.GuiAccountManager(this));
+        }
+
+        if (button.id == 16)
+        {
+            myau.setup.SetupHook.open();
         }
 
         if (button.id == 15)
