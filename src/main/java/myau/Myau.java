@@ -97,6 +97,14 @@ public class Myau {
         moduleManager.modules.put(KnockbackDelay.class, new KnockbackDelay());
         moduleManager.modules.put(TargetESP.class, new TargetESP());
         moduleManager.modules.put(AutoHeal.class, new AutoHeal());
+        moduleManager.modules.put(AutoReconnect.class, new AutoReconnect());
+        moduleManager.modules.put(AutoGG.class, new AutoGG());
+        moduleManager.modules.put(StopMotion.class, new StopMotion());
+        moduleManager.modules.put(VClip.class, new VClip());
+        moduleManager.modules.put(NoClickDelay.class, new NoClickDelay());
+        moduleManager.modules.put(Parkour.class, new Parkour());
+        moduleManager.modules.put(ViewPackets.class, new ViewPackets());
+        moduleManager.modules.put(PartyDetector.class, new PartyDetector());
         moduleManager.modules.put(AutoTool.class, new AutoTool());
         moduleManager.modules.put(AutoSwap.class, new AutoSwap());
         moduleManager.modules.put(BedNuker.class, new BedNuker());
