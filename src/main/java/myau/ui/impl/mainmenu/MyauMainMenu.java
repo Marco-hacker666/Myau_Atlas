@@ -78,6 +78,26 @@ public class MyauMainMenu extends GuiScreen implements GuiYesNoCallback
         this.openGLWarning1 = "";
     }
 
+    private static final String STARTUP_SOUND = "/assets/myau/sounds/startup.wav";
+    private static boolean startupPlayed = false;
+
+    /** Plays the bundled startup sound once per game launch, when this screen first opens. */
+    private static synchronized void playStartupOnce()
+    {
+        if (startupPlayed)
+        {
+            return;
+        }
+        startupPlayed = true;
+        try
+        {
+            myau.util.SoundPlayer.play(STARTUP_SOUND, 60);
+        }
+        catch (Exception ignored)
+        {
+        }
+    }
+
     private boolean func_183501_a()
     {
         return Minecraft.getMinecraft().gameSettings.getOptionOrdinalValue(GameSettings.Options.REALMS_NOTIFICATIONS) && this.field_183503_M != null;
@@ -105,6 +125,7 @@ public class MyauMainMenu extends GuiScreen implements GuiYesNoCallback
     public void initGui()
     {
         this.viewportTexture = new DynamicTexture(256, 256);
+        playStartupOnce();
         Calendar calendar = Calendar.getInstance();
         calendar.setTime(new Date());
 
