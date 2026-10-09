@@ -37,7 +37,7 @@ public final class ModuleCategories {
                 SprintReset.class, Wtap.class, KeepSprint.class, BlockHit.class, HitSelect.class,
                 Hitflick.class, InvulnTiming.class, ClickAssits.class, Piercing.class, Displace.class,
                 KeepRange.class, AimBacktrack.class, KBDisplacement.class, ThrowAura.class, AutoHeal.class,
-                AutoGapple.class, FastBow.class, NoHitDelay.class, NoClickDelay.class);
+                AutoGapple.class, FastBow.class, NoHitDelay.class, NoClickDelay.class, BurstClicker.class, LegitReach.class, ArmorBreaker.class);
         put(Category.PLAYER,
                 Blink.class, NoFall.class, AntiVoid.class, Clutch.class, AutoTool.class, AutoSwap.class,
                 InvManager.class, Refill.class, AntiAFK.class, AntiFireball.class, AutoAnduril.class,
@@ -45,7 +45,7 @@ public final class ModuleCategories {
         put(Category.MOVEMENT,
                 Fly.class, Speed.class, LongJump.class, Jesus.class, NoSlow.class, NoItemRelease.class, NoJumpDelay.class,
                 SafeWalk.class, Eagle.class, InvWalk.class, TargetStrafe.class, MoveFix.class,
-                Stasis.class, StopMotion.class, VClip.class, Parkour.class);
+                Stasis.class, StopMotion.class, VClip.class, Parkour.class, NoWeb.class);
         put(Category.RENDER,
                 ESP.class, ESP2D.class, Chams.class, NameTags.class, Tracers.class,
                 TargetESP.class, TargetHUD.class, ItemESP.class, ChestESP.class, BedESP.class, Xray.class,
@@ -53,24 +53,25 @@ public final class ModuleCategories {
                 BreakProgress.class, Indicators.class, Radar.class, LatencyCrosshair.class,
                 TeamHealthDisplay.class, RenderFixes.class,
                 AntiDebuff.class, BedPlates.class, TNTTimer.class, DamageTags.class, ItemTags.class,
-                EntityCulling.class);
+                EntityCulling.class, Freecam.class);
         put(Category.WORLD,
                 Scaffold.class, AutoBlockIn.class, AutoBedDef.class, AutoHeadHitter.class, BedNuker.class,
                 ChestAura.class, ChestStealer.class, FastPlace.class, SpeedMine.class, Timer.class,
-                AntiObbyTrap.class);
+                AntiObbyTrap.class, Nuker.class, AutoPlace.class);
         put(Category.MISC,
                 AntiBot.class, TargetFilter.class, MCF.class, NickHider.class, Spammer.class, AutoAuth.class,
                 AutoHypixel.class, BedwarUtils.class, BedTracker.class, LightningTracker.class,
                 ESPDetector.class, AntiCheat.class, AntiObfuscate.class, MouseRawInput.class,
                 ResourceSpoofer.class, NoRotate.class, ExploitFixer.class,
-                AutoReconnect.class, AutoGG.class, PartyDetector.class);
+                AutoReconnect.class, AutoGG.class, PartyDetector.class, AutoWho.class, DuelsStats.class, StaffDetector.class,
+                BedProximityAlert.class, AutoBuy.class, AutoRequeue.class);
         put(Category.EXPLOIT,
                 Disabler.class, GhostHand.class, ClientSpoofer.class);
         put(Category.CLIENT,
                 ClickGUIModule.class, GuiModule.class, FlagDetector.class,
                 FlagResponder.class, HitCheck.class, FightLog.class, Debug.class, PacketLogger.class,
                 ServerFingerprint.class, AutoTune.class, Adaptive.class, ServerProfiles.class,
-                LatencyGovernor.class, Panic.class, Rotations.class, Notifications.class, ViewPackets.class);
+                LatencyGovernor.class, Panic.class, Rotations.class, Notifications.class, ViewPackets.class, CheatDetector.class);
         put(Category.LEGIT,
                 Ambience.class, Animations.class, ArmorHUD.class, AutoRespawn.class, Capes.class,
                 DynamicIsland.class, EffectsHUD.class, FPScounter.class, FreeLook.class, FullBright.class,
