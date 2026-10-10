@@ -97,6 +97,81 @@ public class Myau {
         moduleManager.modules.put(KnockbackDelay.class, new KnockbackDelay());
         moduleManager.modules.put(TargetESP.class, new TargetESP());
         moduleManager.modules.put(AutoHeal.class, new AutoHeal());
+        moduleManager.modules.put(AutoReconnect.class, new AutoReconnect());
+        moduleManager.modules.put(AutoGG.class, new AutoGG());
+        moduleManager.modules.put(StopMotion.class, new StopMotion());
+        moduleManager.modules.put(VClip.class, new VClip());
+        moduleManager.modules.put(NoClickDelay.class, new NoClickDelay());
+        moduleManager.modules.put(Parkour.class, new Parkour());
+        moduleManager.modules.put(ViewPackets.class, new ViewPackets());
+        moduleManager.modules.put(PartyDetector.class, new PartyDetector());
+        moduleManager.modules.put(AutoWho.class, new AutoWho());
+        moduleManager.modules.put(DuelsStats.class, new DuelsStats());
+        moduleManager.modules.put(StaffDetector.class, new StaffDetector());
+        moduleManager.modules.put(CheatDetector.class, new CheatDetector());
+        moduleManager.modules.put(BedProximityAlert.class, new BedProximityAlert());
+        moduleManager.modules.put(BurstClicker.class, new BurstClicker());
+        moduleManager.modules.put(LegitReach.class, new LegitReach());
+        moduleManager.modules.put(NoWeb.class, new NoWeb());
+        moduleManager.modules.put(Freecam.class, new Freecam());
+        moduleManager.modules.put(Nuker.class, new Nuker());
+        moduleManager.modules.put(AutoPlace.class, new AutoPlace());
+        moduleManager.modules.put(AutoBuy.class, new AutoBuy());
+        moduleManager.modules.put(AutoRequeue.class, new AutoRequeue());
+        moduleManager.modules.put(ArmorBreaker.class, new ArmorBreaker());
+        moduleManager.modules.put(Phase.class, new Phase());
+        moduleManager.modules.put(Step.class, new Step());
+        moduleManager.modules.put(JumpReset.class, new JumpReset());
+        moduleManager.modules.put(Tower.class, new Tower());
+        moduleManager.modules.put(FastUse.class, new FastUse());
+        moduleManager.modules.put(LegitScaffold.class, new LegitScaffold());
+        moduleManager.modules.put(BlockLadder.class, new BlockLadder());
+        moduleManager.modules.put(LadderClutch.class, new LadderClutch());
+        moduleManager.modules.put(WaterClutch.class, new WaterClutch());
+        moduleManager.modules.put(SkyWars.class, new SkyWars());
+        moduleManager.modules.put(SkywarsAlerts.class, new SkywarsAlerts());
+        moduleManager.modules.put(MegaWallsDetector.class, new MegaWallsDetector());
+        moduleManager.modules.put(MurderDetector.class, new MurderDetector());
+        moduleManager.modules.put(MurderMystery.class, new MurderMystery());
+        moduleManager.modules.put(SumoFences.class, new SumoFences());
+        moduleManager.modules.put(ThePitUtils.class, new ThePitUtils());
+        moduleManager.modules.put(WoolWars.class, new WoolWars());
+        moduleManager.modules.put(FireBallPredict.class, new FireBallPredict());
+        moduleManager.modules.put(AutoPot.class, new AutoPot());
+        moduleManager.modules.put(AutoSoup.class, new AutoSoup());
+        moduleManager.modules.put(AutoRod.class, new AutoRod());
+        moduleManager.modules.put(AutoWeapon.class, new AutoWeapon());
+        moduleManager.modules.put(Arrows.class, new Arrows());
+        moduleManager.modules.put(AntiFalseFlag.class, new AntiFalseFlag());
+        moduleManager.modules.put(ModSpoofer.class, new ModSpoofer());
+        moduleManager.modules.put(PingSpoof.class, new PingSpoof());
+        moduleManager.modules.put(GhostBlock.class, new GhostBlock());
+        moduleManager.modules.put(KillEffect.class, new KillEffect());
+        moduleManager.modules.put(KillMessage.class, new KillMessage());
+        moduleManager.modules.put(KillSounds.class, new KillSounds());
+        moduleManager.modules.put(KillSults.class, new KillSults());
+        moduleManager.modules.put(FallIndicator.class, new FallIndicator());
+        moduleManager.modules.put(BridgeInfo.class, new BridgeInfo());
+        moduleManager.modules.put(SmartBlinker.class, new SmartBlinker());
+        moduleManager.modules.put(LeapModeHUD.class, new LeapModeHUD());
+        moduleManager.modules.put(BridgeAssist.class, new BridgeAssist());
+        moduleManager.modules.put(Spider.class, new Spider());
+        moduleManager.modules.put(PearlSaver.class, new PearlSaver());
+        moduleManager.modules.put(ProjectileAimBot.class, new ProjectileAimBot());
+        moduleManager.modules.put(SmartClicking.class, new SmartClicking());
+        moduleManager.modules.put(DelayRemover.class, new DelayRemover());
+        moduleManager.modules.put(ForwardTrack.class, new ForwardTrack());
+        moduleManager.modules.put(AutoArmor.class, new AutoArmor());
+        moduleManager.modules.put(BedWars.class, new BedWars());
+        moduleManager.modules.put(SpeedBuilders.class, new SpeedBuilders());
+        moduleManager.modules.put(BedDefender.class, new BedDefender());
+        moduleManager.modules.put(AutoBed.class, new AutoBed());
+        moduleManager.modules.put(AutoPlay.class, new AutoPlay());
+        moduleManager.modules.put(BlocksESP.class, new BlocksESP());
+        moduleManager.modules.put(MobESP.class, new MobESP());
+        moduleManager.modules.put(AutoBlock.class, new AutoBlock());
+        /* The script runtime drives scripts through one module (Batch 6). */
+        moduleManager.modules.put(ScriptModule.class, new ScriptModule());
         moduleManager.modules.put(AutoTool.class, new AutoTool());
         moduleManager.modules.put(AutoSwap.class, new AutoSwap());
         moduleManager.modules.put(BedNuker.class, new BedNuker());
@@ -279,6 +354,12 @@ public class Myau {
         commandManager.commands.add(new TargetCommand());
         commandManager.commands.add(new ToggleCommand());
         commandManager.commands.add(new VclipCommand());
+        /* Online config sharing and the script runtime (Batches 5 and 6). */
+        commandManager.commands.add(new OnlineConfigCommand());
+        commandManager.commands.add(new myau.command.commands.UserConfigCommand());
+        commandManager.commands.add(new myau.command.commands.SetupCommand());
+        commandManager.commands.add(new myau.command.commands.AltsCommand());
+        commandManager.commands.add(new myau.command.commands.ScriptCommand());
         for (Module module : moduleManager.modules.values()) {
             ArrayList<Property<?>> properties = new ArrayList<>();
             /* The Theme groups keep their settings in ThemeStyle, so for them
@@ -348,6 +429,14 @@ public class Myau {
             version = modInfo.get("version").getAsString();
         } catch (Exception e) {
             version = "dev";
+        }
+        /* Setup: keep OneConfig's GUI key off RightShift, which is our ClickGUI key,
+           and re-check it whenever a world loads. */
+        try {
+            java.io.File gameDir = net.minecraft.client.Minecraft.getMinecraft().mcDataDir;
+            myau.setup.OneConfigPatcher.run(gameDir);
+            myau.setup.OneConfigPatcher.watch(gameDir);
+        } catch (Throwable ignored) {
         }
         updateDisplayTitle();
 

@@ -4255,3 +4255,29 @@ Decisions recorded in the report (2026-10-09): keep Helper as a fifth mode; Requ
 Predict without the RhythmMax cap (Vape's Hold after + release on damage instead); Lag done Vape's way (hold the
 release and everything after it 50-100 ms). Owner then said "not now": only a pre-change backup was taken
 (`backups/src/pre-blockhit-vape-20261009`); no code changed.
+
+## 2026-10-09 — Setup screen: port OpenSkid's auto mod downloader
+
+Ported OpenSkid's `openskid/setup` package to `myau/setup` (GPL-3.0): the client can now offer, and
+quietly install, OptiFine (auto), 3DSkinLayers, Controlling, CreamyKeys, ModernF3 and WaveyCapes
+plus ten resource/sound packs. `SetupHook.onMainMenu` opens the wizard on the first launch, and
+`SetupCatalog`/`SetupScanner` work out what is missing; a **Setup** button on the main menu reopens
+it at any time. State lives in `config/Myau/setup_done`.
+
+Three fixes came out of the port (all latent in the original):
+- `SetupScanner.isPrefixMatch` searched for the upper-case tag `_HD_U_` in an already lower-cased
+  string, so "any OptiFine build counts as installed" never matched. It lower-cases both sides now.
+- `isNumberedDuplicate` only understood Chrome's `Foo (1).jar`; some clients write `Foo.jar (1)`,
+  which made the client re-offer a mod the user already had. Both shapes are recognised now.
+- The CurseForge API URL for Controlling answers 404 today; the entry points at the ForgeCDN file
+  (`mediafilez.forgecdn.net/files/3810/294/...`) the API used to redirect to.
+
+`SetupDownloader` is hardened: a jar/zip must start with the `PK` zip magic (an HTML error page or
+login wall answering 200 is rejected instead of written into `mods/`), transient failures retry
+three times with backoff, a download can be cancelled, at most three run at once, and a failed
+transfer deletes its `.download` temp file. The screen follows the Atlas light/dark mode and shows a
+live percentage, speed and ETA.
+
+Verified: 298 tests pass; the download path was also exercised outside the game against the real
+catalog (Controlling fetched and validated as a PK jar, an HTML-as-jar URL rejected, no temp files
+left behind).

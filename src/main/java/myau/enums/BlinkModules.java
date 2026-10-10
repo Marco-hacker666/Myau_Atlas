@@ -18,7 +18,10 @@ public enum BlinkModules {
        and the Blink module release each other's queues and filed Scaffold's
        holds under "BLINK" in the ledger. */
     SCAFFOLD("Scaffold", 5000L),
-    NO_SLOW("NoSlow", 2000L);
+    NO_SLOW("NoSlow", 2000L),
+    /* A short hold while a target is in range, ended as soon as a release
+       condition fires; the ceiling is the longest it may run unwatched. */
+    SMART_BLINKER("SmartBlinker", 5000L);
 
     private final String moduleName;
     private final long leaseMs;
