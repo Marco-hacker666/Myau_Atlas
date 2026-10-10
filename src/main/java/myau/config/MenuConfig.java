@@ -18,6 +18,8 @@ public final class MenuConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static boolean loaded;
     private static int backgroundIndex = 2;
+    /** The main menu's startup sound. On by default; see MyauMainMenu#playStartupOnce. */
+    private static boolean startupSound = true;
 
     private MenuConfig() {
     }
@@ -29,11 +31,14 @@ public final class MenuConfig {
 
         loaded = true;
         backgroundIndex = 2;
+        startupSound = true;
 
         if (!FILE.exists()) {
             save();
             return;
         }
+
+        boolean missingStartupSound = false;
 
         try (BufferedReader reader = new BufferedReader(new FileReader(FILE))) {
             JsonElement parsed = new JsonParser().parse(reader);
@@ -42,9 +47,22 @@ public final class MenuConfig {
                 if (object.has("backgroundIndex")) {
                     backgroundIndex = clamp(object.get("backgroundIndex").getAsInt());
                 }
+                if (object.has("startupSound")) {
+                    startupSound = object.get("startupSound").getAsBoolean();
+                } else {
+                    missingStartupSound = true;
+                }
             }
         } catch (Exception ignored) {
             backgroundIndex = 2;
+            startupSound = true;
+        }
+
+        /* A switch the player cannot see is a switch the player will not find, so
+           a menu.json written before this option existed is rewritten with it
+           (2026-10-10). */
+        if (missingStartupSound) {
+            save();
         }
     }
 
@@ -58,6 +76,16 @@ public final class MenuConfig {
         backgroundIndex = clamp(index);
     }
 
+    public static synchronized boolean isStartupSound() {
+        load();
+        return startupSound;
+    }
+
+    public static synchronized void setStartupSound(boolean enabled) {
+        load();
+        startupSound = enabled;
+    }
+
     public static synchronized void save() {
         try {
             File parent = FILE.getParentFile();
@@ -67,6 +95,7 @@ public final class MenuConfig {
 
             JsonObject object = new JsonObject();
             object.addProperty("backgroundIndex", clamp(backgroundIndex));
+            object.addProperty("startupSound", startupSound);
 
             try (PrintWriter writer = new PrintWriter(new FileWriter(FILE))) {
                 writer.println(GSON.toJson(object));

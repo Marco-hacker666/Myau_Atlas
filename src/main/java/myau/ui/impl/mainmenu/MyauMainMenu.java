@@ -78,6 +78,64 @@ public class MyauMainMenu extends GuiScreen implements GuiYesNoCallback
         this.openGLWarning1 = "";
     }
 
+    private static final String STARTUP_SOUND = "/assets/myau/sounds/startup.wav";
+    private static final int STARTUP_VOLUME_PCT = 60;
+    private static boolean startupPlayed = false;
+
+    /**
+     * Plays the bundled startup sound once per game launch, when this screen first
+     * opens. Silent when the player disabled it in config/Myau/menu.json.
+     *
+     * <p>The clip is played outside Minecraft's own mixer, so the game's volume
+     * setting does not reach it (2026-10-10): the master volume is applied here,
+     * which also keeps a muted client quiet.
+     */
+    private static synchronized void playStartupOnce()
+    {
+        if (startupPlayed)
+        {
+            return;
+        }
+        startupPlayed = true;
+
+        if (!myau.config.MenuConfig.isStartupSound())
+        {
+            return;
+        }
+
+        /* The clip plays outside Minecraft's own mixer, so the game's volume never
+           reaches it. Only "muted" can be honoured here, and it deliberately is
+           not scaled by the master volume: a player who keeps gameplay sound low
+           would then never hear a startup sound at all -- which is the reported
+           case (master volume 6%, 2026-10-10). config/Myau/menu.json has its own
+           switch for turning the sound off. */
+        if (isGameMuted())
+        {
+            return;
+        }
+
+        try
+        {
+            myau.util.SoundPlayer.play(STARTUP_SOUND, STARTUP_VOLUME_PCT);
+        }
+        catch (Exception ignored)
+        {
+        }
+    }
+
+    /** Whether the player has the whole game muted, so the clip stays quiet too. */
+    private static boolean isGameMuted()
+    {
+        try
+        {
+            return Minecraft.getMinecraft().gameSettings.getSoundLevel(net.minecraft.client.audio.SoundCategory.MASTER) <= 0.0F;
+        }
+        catch (Exception e)
+        {
+            return false;
+        }
+    }
+
     private boolean func_183501_a()
     {
         return Minecraft.getMinecraft().gameSettings.getOptionOrdinalValue(GameSettings.Options.REALMS_NOTIFICATIONS) && this.field_183503_M != null;
@@ -106,6 +164,7 @@ public class MyauMainMenu extends GuiScreen implements GuiYesNoCallback
     {
         this.viewportTexture = new DynamicTexture(256, 256);
         myau.setup.SetupHook.onMainMenu(this);
+        playStartupOnce();
         Calendar calendar = Calendar.getInstance();
         calendar.setTime(new Date());
 
